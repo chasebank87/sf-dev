@@ -14,8 +14,57 @@ Import-Module -Name "$PSScriptRoot/core/UserInteraction.psm1"
 Import-Module -Name "$PSScriptRoot/core/Logger.psm1"
 Import-Module -Name "$PSScriptRoot/core/DebugHelper.psm1"
 
+# Configuration check and setup
+$configPath = "$PSScriptRoot/config/dev.yaml"
+$exampleConfigPath = "$PSScriptRoot/config/example.yaml"
+
+function Test-ConfigurationSetup {
+    # Check if dev.yaml exists
+    if (-not (Test-Path $configPath)) {
+        Write-Host "`n❌ CONFIGURATION ERROR" -ForegroundColor Red
+        Write-Host "===============================================" -ForegroundColor Red
+        Write-Host "The configuration file 'config/dev.yaml' is missing!" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "To fix this issue:" -ForegroundColor Cyan
+        Write-Host "1. Copy the example configuration file:" -ForegroundColor White
+        Write-Host "   Copy-Item '$exampleConfigPath' '$configPath'" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "2. Edit the configuration file with your actual values:" -ForegroundColor White
+        Write-Host "   notepad '$configPath'  # Windows" -ForegroundColor Gray
+        Write-Host "   code '$configPath'     # VS Code" -ForegroundColor Gray
+        Write-Host "   nano '$configPath'     # Linux/macOS" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "3. Update the following required fields:" -ForegroundColor Yellow
+        Write-Host "   - service_account: Your actual service account name" -ForegroundColor White
+        Write-Host "   - servers: Your actual server list" -ForegroundColor White
+        Write-Host "   - mxls_template_servers: Your MXLS template servers" -ForegroundColor White
+        Write-Host "   - mxls_automation.service_account: Your MXLS service account" -ForegroundColor White
+        Write-Host ""
+        Write-Host "4. Restart the application after configuration is complete." -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "For more information, see the README.md file." -ForegroundColor Gray
+        Write-Host "===============================================" -ForegroundColor Red
+        Write-Host ""
+        Read-Host "Press Enter to exit"
+        exit 1
+    }
+    
+    # Check if example.yaml exists (for reference)
+    if (-not (Test-Path $exampleConfigPath)) {
+        Write-Host "`n⚠️  WARNING" -ForegroundColor Yellow
+        Write-Host "The example configuration file 'config/example.yaml' is missing." -ForegroundColor Yellow
+        Write-Host "This file should be available for reference. Please check your installation." -ForegroundColor Yellow
+        Write-Host ""
+    }
+    
+    Write-Host "✅ Configuration file found: $configPath" -ForegroundColor Green
+}
+
+# Run configuration check
+Test-ConfigurationSetup
+
 # Load config
-$yamlConfig = Import-Config -ConfigPath "$PSScriptRoot/config/dev.yaml"
+$yamlConfig = Import-Config -ConfigPath $configPath
 
 # Initialize logger and debug helper with config
 Initialize-Logger -Config $yamlConfig
@@ -23,7 +72,7 @@ Initialize-DebugHelper -Config $yamlConfig
 $logger = Get-Logger
 $debugHelper = Get-DebugHelper
 
-$logger.LogInfo("Configuration loaded from: $PSScriptRoot/config/dev.yaml", "Configuration")
+$logger.LogInfo("Configuration loaded from: $configPath", "Configuration")
 if ($debugHelper.IsDebug()) {
     $logger.LogInfo("DEBUG MODE ENABLED - Commands will be logged but not executed", "Debug")
     Write-Host "DEBUG MODE ENABLED - Commands will be logged but not executed" -ForegroundColor Red
@@ -51,7 +100,7 @@ function Show-MainMenu {
                 
                 try {
                     # Update the configuration file
-                    $yamlConfig = Update-DebugSetting -ConfigPath "$PSScriptRoot/config/dev.yaml" -DebugEnabled $newDebugStatus
+                    $yamlConfig = Update-DebugSetting -ConfigPath $configPath -DebugEnabled $newDebugStatus
                     
                     # Update the global debug helper
                     $Global:DebugHelper = Get-DebugHelper
