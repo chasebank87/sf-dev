@@ -35,15 +35,4 @@ mxls_automation:
   generate_key_bat: 'Generate Encrypt Key.bat'
   encryption_key_file: 'encryption_key.txt'
 
-# Job configurations
-jobs:
-  - 'ExampleJobA'
-  - 'ExampleJobB'
-  - 'ExampleJobC'
-
-# Additional settings
-settings:
-  backup_enabled: true
-  max_retries: 3
-  timeout_seconds: 300
-  log_level: 'INFO' 
+ 
