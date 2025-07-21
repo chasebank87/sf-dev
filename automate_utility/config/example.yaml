@@ -1,0 +1,49 @@
+# Example Configuration File
+# Copy this file to dev.yaml and update with your actual values
+
+ascii_art_path: 'assets/logo.png'
+service_account: 'EXAMPLE_SERVICE_ACCOUNT'
+log_folder: 'logs'
+debug: false
+
+# Server configurations
+servers:
+  - name: 'example-server-1'
+    address: 'example-server-1.domain.local'
+  - name: 'example-server-2'
+    address: 'example-server-2.domain.local'
+
+# MXLS Template servers (specific to this automation)
+mxls_template_servers:
+  - name: 'template-server-1'
+    address: 'template-server-1.domain.local'
+  - name: 'template-server-2'
+    address: 'template-server-2.domain.local'
+  - name: 'template-server-3'
+    address: 'template-server-3.domain.local'
+
+# MXLS Automation paths and settings
+mxls_automation:
+  base_path: 'D:\\Hyperion\\Automation'
+  scripts_path: 'D:\\Hyperion\\Automation\\scripts'
+  templates_path: 'D:\\Hyperion\\Automation\\scripts\\templates\\Login'
+  service_account: 'svc_exampleadmin'
+  login_file: 'Login.mxl'
+  encrypted_login_file: 'Login.mxls'
+  maxl_bat_file: 'Maxl.bat'
+  encrypt_login_bat: 'Encrypt Login.bat'
+  generate_key_bat: 'Generate Encrypt Key.bat'
+  encryption_key_file: 'encryption_key.txt'
+
+# Job configurations
+jobs:
+  - 'ExampleJobA'
+  - 'ExampleJobB'
+  - 'ExampleJobC'
+
+# Additional settings
+settings:
+  backup_enabled: true
+  max_retries: 3
+  timeout_seconds: 300
+  log_level: 'INFO' 

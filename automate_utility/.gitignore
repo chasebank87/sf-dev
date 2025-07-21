@@ -1,7 +1,6 @@
 # Configuration files (may contain sensitive information)
-config/
-*.yaml
-*.yml
+config/*.yaml
+config/*.yml
 !config/example.yaml
 
 # Log files
