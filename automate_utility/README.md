@@ -98,6 +98,71 @@ mxls_automation:
 
 ```powershell
 # Navigate to the project directory
+cd automate_utility
+
+# Run the main application
+.\main.ps1
+```
+
+### Debug Mode
+
+The application includes a comprehensive debug mode that logs exact commands without executing them. This is perfect for testing and auditing purposes.
+
+#### Features:
+- **Command Logging**: Shows the exact PowerShell commands that would be executed
+- **Password Sanitization**: Automatically removes password parameters from logged commands
+- **Safe Testing**: Commands are logged but not executed in debug mode
+- **Detailed Output**: Includes command parameters and arguments
+
+#### Enabling Debug Mode:
+
+1. **Via Configuration File**: Set `debug: true` in `config/dev.yaml`
+2. **Via Menu**: Use the "Toggle Debug Mode" option in the main menu
+
+#### Example Debug Output:
+```
+DEBUG COMMAND: New-PSSession -ComputerName 'server1.domain.local' -EnableNetworkAccess
+DEBUG COMMAND: Invoke-Command -Session $session -ScriptBlock { param($path) Get-Content -Path $path } -ArgumentList: 'D:\path\to\file.txt'
+DEBUG COMMAND: Set-Content -Path 'D:\path\to\file.txt' -Value '[CONTENT]' -NoNewline
+DEBUG COMMAND: Start-Process -FilePath 'D:\script.bat' -ArgumentList 'param1 param2' -Wait
+```
+
+#### Configuration Example:
+```yaml
+# Example configuration file (config/example.yaml)
+# Copy this file to dev.yaml and update with your actual values
+
+debug: false  # Set to true to enable debug mode
+service_account: 'EXAMPLE_SERVICE_ACCOUNT'
+log_folder: 'logs'
+
+# Server configurations
+servers:
+  - name: 'example-server-1'
+    address: 'example-server-1.domain.local'
+  - name: 'example-server-2'
+    address: 'example-server-2.domain.local'
+
+# MXLS Template servers
+mxls_template_servers:
+  - name: 'template-server-1'
+    address: 'template-server-1.domain.local'
+  - name: 'template-server-2'
+    address: 'template-server-2.domain.local'
+
+# MXLS Automation settings
+mxls_automation:
+  base_path: 'D:\\Hyperion\\Automation'
+  scripts_path: 'D:\\Hyperion\\Automation\\scripts'
+  templates_path: 'D:\\Hyperion\\Automation\\scripts\\templates\\Login'
+  service_account: 'svc_exampleadmin'
+  login_file: 'Login.mxl'
+  encrypted_login_file: 'Login.mxls'
+  maxl_bat_file: 'Maxl.bat'
+  encrypt_login_bat: 'Encrypt Login.bat'
+  generate_key_bat: 'Generate Encrypt Key.bat'
+  encryption_key_file: 'encryption_key.txt'
+```
 cd salesforce
 
 # Run the main application

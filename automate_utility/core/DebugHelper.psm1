@@ -14,13 +14,35 @@ class DebugHelper {
     [void]LogCommand([string]$Command, [string]$Description = "") {
         $logger = Get-Logger
         if ($this.IsDebugMode) {
-            $message = "DEBUG COMMAND: $Command"
+            # Remove password parameters from command for security
+            $sanitizedCommand = $this.SanitizeCommand($Command)
+            
+            $message = "DEBUG COMMAND: $sanitizedCommand"
             if ($Description) {
                 $message += " - $Description"
             }
             Write-Host $message -ForegroundColor Cyan
             $logger.LogInfo($message, "Debug Command")
         }
+    }
+
+    [string]SanitizeCommand([string]$Command) {
+        # Remove password parameters and their values
+        $patterns = @(
+            '-Password\s+["''][^"'']*["'']',  # -Password "value"
+            '-Password\s+\$[^\s]+',           # -Password $variable
+            'password\s*=\s*["''][^"'']*["'']', # password="value"
+            'password\s*=\s*\$[^\s]+',        # password=$variable
+            '--password\s+["''][^"'']*["'']', # --password "value"
+            '--password\s+\$[^\s]+'           # --password $variable
+        )
+        
+        $sanitized = $Command
+        foreach ($pattern in $patterns) {
+            $sanitized = $sanitized -replace $pattern, '-Password "[REDACTED]"'
+        }
+        
+        return $sanitized
     }
 
     [void]LogFileOperation([string]$Operation, [string]$Source, [string]$Destination = "") {
@@ -86,7 +108,8 @@ class DebugHelper {
             & $Command
         } else {
             # Log what would have been executed
-            $this.LogCommand($CommandType, $Description)
+            $commandString = $Command.ToString()
+            $this.LogCommand($commandString, $Description)
         }
     }
 
@@ -100,20 +123,25 @@ class DebugHelper {
             }
         } else {
             # Log what would have been executed
-            $this.LogCommand($CommandType, $Description)
+            $commandString = $ScriptBlock.ToString()
+            if ($ArgumentList.Count -gt 0) {
+                $argString = $ArgumentList -join ', '
+                $commandString += " -ArgumentList: $argString"
+            }
+            $this.LogCommand($commandString, $Description)
             return $null
         }
     }
 
     [void]StartProcessOrDebug([string]$FilePath, [string]$Arguments = "", [string]$Description) {
         if ($this.IsDebugMode) {
-            $message = "DEBUG PROCESS: Start-Process -FilePath '$FilePath'"
+            $command = "Start-Process -FilePath '$FilePath'"
             if ($Arguments) {
-                $message += " -ArgumentList '$Arguments'"
+                $command += " -ArgumentList '$Arguments'"
             }
-            $message += " - $Description"
-            Write-Host $message -ForegroundColor Green
-            $this.LogCommand($message, $Description)
+            $command += " -Wait"
+            
+            $this.LogCommand($command, $Description)
         } else {
             if ($Arguments) {
                 Start-Process -FilePath $FilePath -ArgumentList $Arguments -Wait
@@ -129,9 +157,9 @@ class DebugHelper {
             foreach ($key in $Parameters.Keys) {
                 $paramString += " -$key '$($Parameters[$key])'"
             }
-            $message = "DEBUG COPY: Copy-Item -Path '$Source' -Destination '$Destination'$paramString - $Description"
-            Write-Host $message -ForegroundColor Yellow
-            $this.LogFileOperation("Copy", $Source, $Destination)
+            $command = "Copy-Item -Path '$Source' -Destination '$Destination'$paramString"
+            
+            $this.LogCommand($command, $Description)
         } else {
             $params = @{
                 Path = $Source
@@ -146,18 +174,16 @@ class DebugHelper {
 
     [void]SetContentOrDebug([string]$Path, [string]$Content, [string]$Description) {
         if ($this.IsDebugMode) {
-            $message = "DEBUG SET CONTENT: Set-Content -Path '$Path' - $Description"
-            Write-Host $message -ForegroundColor Yellow
-            $this.LogFileOperation("Set Content", $Path)
+            $command = "Set-Content -Path '$Path' -Value '[CONTENT]' -NoNewline"
+            $this.LogCommand($command, $Description)
         } else {
             Set-Content -Path $Path -Value $Content -NoNewline
         }
     }
 
     [object]NewPSSessionOrDebug([string]$ComputerName, [string]$Description) {
-        $message = "DEBUG SESSION: New-PSSession -ComputerName '$ComputerName' - $Description"
-        Write-Host $message -ForegroundColor Magenta
-        $this.LogServerOperation($ComputerName, "Session Creation", "Debug Mode")
+        $command = "New-PSSession -ComputerName '$ComputerName' -EnableNetworkAccess"
+        $this.LogCommand($command, $Description)
         
         # Always create real sessions, even in debug mode
         return New-PSSession -ComputerName $ComputerName -EnableNetworkAccess -ErrorAction Stop

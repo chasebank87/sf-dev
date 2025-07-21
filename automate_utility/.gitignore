@@ -2,6 +2,7 @@
 config/
 *.yaml
 *.yml
+!config/example.yaml
 
 # Log files
 logs/
