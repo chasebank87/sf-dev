@@ -1,0 +1,46 @@
+# Configuration files (may contain sensitive information)
+config/
+*.yaml
+*.yml
+
+# Log files
+logs/
+*.log
+
+# PowerShell session files
+*.pssession
+
+# Temporary files
+*.tmp
+*.temp
+
+# Backup files
+*.backup.*
+
+# Windows specific
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# macOS specific
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# PowerShell module cache
+*.psm1.cache
+
+# Encryption keys and sensitive files
+encryption_key.txt
+*.key
+*.pem
+*.p12
+
+# Session state files
+*.ps1.state 
