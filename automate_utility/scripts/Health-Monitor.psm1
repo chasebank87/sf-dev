@@ -178,22 +178,25 @@ function Test-PortConnectivity {
             
             # Test each port in the range
             for ($p = $startPort; $p -le $endPort; $p++) {
-                $testCmd = "Test-NetConnection -ComputerName '$Server' -Port $p -InformationLevel Quiet -WarningAction SilentlyContinue -InformationAction SilentlyContinue"
+                $testCmd = "TcpClient test to $Server`:$p with ${TimeoutSeconds}s timeout"
                 $debugHelper.LogCommand($testCmd, "Testing port $p on $Server with ${TimeoutSeconds}s timeout")
                 
                 if ($debugHelper.ShouldExecuteCommand("Test-NetConnection")) {
-                    # Use job with timeout for actual execution
-                    $job = Start-Job -ScriptBlock {
-                        param($Server, $Port)
-                        Test-NetConnection -ComputerName $Server -Port $Port -InformationLevel Quiet -WarningAction SilentlyContinue -InformationAction SilentlyContinue
-                    } -ArgumentList $Server, $p
-                    
-                    $result = Wait-Job -Job $job -Timeout $TimeoutSeconds | Receive-Job
-                    Remove-Job -Job $job -Force
-                    
-                    if ($result -and $result.TcpTestSucceeded) {
-                        $logger.LogInfo("Port $p on $Server is accessible", "Health Monitor")
-                        return $true
+                    # Use TcpClient for faster, silent testing
+                    try {
+                        $tcpClient = New-Object System.Net.Sockets.TcpClient
+                        $asyncResult = $tcpClient.BeginConnect($Server, $p, $null, $null)
+                        $success = $asyncResult.AsyncWaitHandle.WaitOne($TimeoutSeconds * 1000, $false)
+                        
+                        if ($success) {
+                            $tcpClient.EndConnect($asyncResult)
+                            $logger.LogInfo("Port $p on $Server is accessible", "Health Monitor")
+                            $tcpClient.Close()
+                            return $true
+                        }
+                        $tcpClient.Close()
+                    } catch {
+                        # Connection failed - continue to next port
                     }
                 } else {
                     # Debug mode - just log the command
@@ -205,20 +208,27 @@ function Test-PortConnectivity {
             return $false
         } else {
             # Single port test
-            $testCmd = "Test-NetConnection -ComputerName '$Server' -Port $Port -InformationLevel Quiet -WarningAction SilentlyContinue -InformationAction SilentlyContinue"
+            $testCmd = "TcpClient test to $Server`:$Port with ${TimeoutSeconds}s timeout"
             $debugHelper.LogCommand($testCmd, "Testing port $Port on $Server with ${TimeoutSeconds}s timeout")
             
             if ($debugHelper.ShouldExecuteCommand("Test-NetConnection")) {
-                # Use job with timeout for actual execution
-                $job = Start-Job -ScriptBlock {
-                    param($Server, $Port)
-                    Test-NetConnection -ComputerName $Server -Port $Port -InformationLevel Quiet -WarningAction SilentlyContinue -InformationAction SilentlyContinue
-                } -ArgumentList $Server, $Port
-                
-                $result = Wait-Job -Job $job -Timeout $TimeoutSeconds | Receive-Job
-                Remove-Job -Job $job -Force
-                
-                return ($result -and $result.TcpTestSucceeded)
+                # Use TcpClient for faster, silent testing
+                try {
+                    $tcpClient = New-Object System.Net.Sockets.TcpClient
+                    $asyncResult = $tcpClient.BeginConnect($Server, $Port, $null, $null)
+                    $success = $asyncResult.AsyncWaitHandle.WaitOne($TimeoutSeconds * 1000, $false)
+                    
+                    if ($success) {
+                        $tcpClient.EndConnect($asyncResult)
+                        $tcpClient.Close()
+                        return $true
+                    }
+                    $tcpClient.Close()
+                    return $false
+                } catch {
+                    # Connection failed
+                    return $false
+                }
             } else {
                 # Debug mode - just log the command
                 return $false
