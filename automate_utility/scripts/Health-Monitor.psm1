@@ -94,7 +94,7 @@ function Invoke-HealthMonitor {
             $previousStatus[$serviceKey] = $service.Status
             
             # Test port connectivity
-            $portStatus = Test-PortConnectivity -Server $service.Address -Port $service.Port -DebugHelper $debugHelper -LoggedErrors $loggedErrors
+            $portStatus = Test-PortConnectivity -Server $service.Address -Port $service.Port -DebugHelper $debugHelper -LoggedErrors $loggedErrors -TimeoutSeconds 2
             
             if ($portStatus) {
                 $service.Status = "Ready"
@@ -165,7 +165,8 @@ function Test-PortConnectivity {
         [Parameter(Mandatory)]
         [object]$DebugHelper,
         [Parameter(Mandatory)]
-        [hashtable]$LoggedErrors
+        [hashtable]$LoggedErrors,
+        [int]$TimeoutSeconds = 2
     )
     
     try {
@@ -178,13 +179,25 @@ function Test-PortConnectivity {
             # Test each port in the range
             for ($p = $startPort; $p -le $endPort; $p++) {
                 $testCmd = "Test-NetConnection -ComputerName '$Server' -Port $p -InformationLevel Quiet -WarningAction SilentlyContinue -InformationAction SilentlyContinue"
-                $debugHelper.LogCommand($testCmd, "Testing port $p on $Server")
+                $debugHelper.LogCommand($testCmd, "Testing port $p on $Server with ${TimeoutSeconds}s timeout")
                 
-                $result = $debugHelper.ExecuteOrDebug({ Test-NetConnection -ComputerName $Server -Port $p -InformationLevel Quiet -WarningAction SilentlyContinue -InformationAction SilentlyContinue }, "Testing port $p on $Server", "Test-NetConnection")
-                
-                if ($result) {
-                    $logger.LogInfo("Port $p on $Server is accessible", "Health Monitor")
-                    return $true
+                if ($debugHelper.ShouldExecuteCommand("Test-NetConnection")) {
+                    # Use job with timeout for actual execution
+                    $job = Start-Job -ScriptBlock {
+                        param($Server, $Port)
+                        Test-NetConnection -ComputerName $Server -Port $Port -InformationLevel Quiet -WarningAction SilentlyContinue -InformationAction SilentlyContinue
+                    } -ArgumentList $Server, $p
+                    
+                    $result = Wait-Job -Job $job -Timeout $TimeoutSeconds | Receive-Job
+                    Remove-Job -Job $job -Force
+                    
+                    if ($result -and $result.TcpTestSucceeded) {
+                        $logger.LogInfo("Port $p on $Server is accessible", "Health Monitor")
+                        return $true
+                    }
+                } else {
+                    # Debug mode - just log the command
+                    $debugHelper.LogCommand($testCmd, "Testing port $p on $Server")
                 }
             }
             
@@ -193,11 +206,23 @@ function Test-PortConnectivity {
         } else {
             # Single port test
             $testCmd = "Test-NetConnection -ComputerName '$Server' -Port $Port -InformationLevel Quiet -WarningAction SilentlyContinue -InformationAction SilentlyContinue"
-            $debugHelper.LogCommand($testCmd, "Testing port $Port on $Server")
+            $debugHelper.LogCommand($testCmd, "Testing port $Port on $Server with ${TimeoutSeconds}s timeout")
             
-            $result = $debugHelper.ExecuteOrDebug({ Test-NetConnection -ComputerName $Server -Port $Port -InformationLevel Quiet -WarningAction SilentlyContinue -InformationAction SilentlyContinue }, "Testing port $Port on $Server", "Test-NetConnection")
-            
-            return $result
+            if ($debugHelper.ShouldExecuteCommand("Test-NetConnection")) {
+                # Use job with timeout for actual execution
+                $job = Start-Job -ScriptBlock {
+                    param($Server, $Port)
+                    Test-NetConnection -ComputerName $Server -Port $Port -InformationLevel Quiet -WarningAction SilentlyContinue -InformationAction SilentlyContinue
+                } -ArgumentList $Server, $Port
+                
+                $result = Wait-Job -Job $job -Timeout $TimeoutSeconds | Receive-Job
+                Remove-Job -Job $job -Force
+                
+                return ($result -and $result.TcpTestSucceeded)
+            } else {
+                # Debug mode - just log the command
+                return $false
+            }
         }
     } catch {
         $logger = Get-Logger
