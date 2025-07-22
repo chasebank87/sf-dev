@@ -10,7 +10,7 @@ using module ./core/DebugHelper.psm1
 Import-Module -Name "$PSScriptRoot/core/ModuleInstaller.psm1"
 Install-RequiredModules -ModuleNames @('psAsciiArt', 'powershell-yaml')
 Import-Module -Name "$PSScriptRoot/core/ConfigLoader.psm1"
-Import-Module -Name "$PSScriptRoot/core/UserInteraction.psm1"
+Import-Module -Name "$PSScriptRoot/core/UserInteraction.psm1" -Force
 Import-Module -Name "$PSScriptRoot/core/Logger.psm1"
 Import-Module -Name "$PSScriptRoot/core/DebugHelper.psm1"
 
