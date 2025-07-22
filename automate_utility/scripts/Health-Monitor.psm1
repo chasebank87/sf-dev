@@ -99,8 +99,10 @@ function Invoke-HealthMonitor {
                 $service = $allServices[$serviceKey]
                 $previousStatus[$serviceKey] = $service.Status
 
+                $logger.LogInfo("[DIAG] Before Test-PortConnectivity for $serviceKey (Address=$($service.Address), Port=$($service.Port))", "Health Monitor")
                 # Test port connectivity
                 $portStatus = Test-PortConnectivity -Server $service.Address -Port $service.Port -DebugHelper $debugHelper -LoggedErrors $loggedErrors -TimeoutSeconds 2
+                $logger.LogInfo("[DIAG] After Test-PortConnectivity for $serviceKey", "Health Monitor")
 
                 if ($portStatus) {
                     $service.Status = "Ready"
@@ -124,11 +126,13 @@ function Invoke-HealthMonitor {
             }
 
             # Display status (clear screen if status changed or first check)
+            $logger.LogInfo("[DIAG] Before Show-HealthStatus", "Health Monitor")
             if ($statusChanged -or $checkCount -eq 1) {
                 $logger.LogInfo("Displaying health status - Status changed: $statusChanged, Check count: $checkCount", "Health Monitor")
                 Clear-Host
                 Show-HealthStatus -Services $allServices -CheckCount $checkCount -StartTime $startTime
             }
+            $logger.LogInfo("[DIAG] After Show-HealthStatus", "Health Monitor")
 
             # Log progress
             $logger.LogInfo("Check #$checkCount completed - Ready: $readyCount/$totalCount", "Health Monitor")
