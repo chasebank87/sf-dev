@@ -84,57 +84,67 @@ function Invoke-HealthMonitor {
     
     # Main monitoring loop
     while (-not $servicesReady -and ((Get-Date) - $startTime).TotalSeconds -lt $Timeout) {
-        $checkCount++
-        $currentTime = Get-Date
-        $logger.LogInfo("=== CHECK #$checkCount at $currentTime ===", "Health Monitor")
-        
-        # Check all services
-        $statusChanged = $false
-        $readyCount = 0
-        $totalCount = $allServices.Count
-        
-        foreach ($serviceKey in $allServices.Keys) {
-            $service = $allServices[$serviceKey]
-            $previousStatus[$serviceKey] = $service.Status
-            
-            # Test port connectivity
-            $portStatus = Test-PortConnectivity -Server $service.Address -Port $service.Port -DebugHelper $debugHelper -LoggedErrors $loggedErrors -TimeoutSeconds 2
-            
-            if ($portStatus) {
-                $service.Status = "Ready"
-                $readyCount++
-            } else {
-                $service.Status = "Not Ready"
+        try {
+            $logger.LogInfo("[DIAG] Loop iteration START (CheckCount=$checkCount)", "Health Monitor")
+            $checkCount++
+            $currentTime = Get-Date
+            $logger.LogInfo("=== CHECK #$checkCount at $currentTime ===", "Health Monitor")
+
+            # Check all services
+            $statusChanged = $false
+            $readyCount = 0
+            $totalCount = $allServices.Count
+
+            foreach ($serviceKey in $allServices.Keys) {
+                $service = $allServices[$serviceKey]
+                $previousStatus[$serviceKey] = $service.Status
+
+                # Test port connectivity
+                $portStatus = Test-PortConnectivity -Server $service.Address -Port $service.Port -DebugHelper $debugHelper -LoggedErrors $loggedErrors -TimeoutSeconds 2
+
+                if ($portStatus) {
+                    $service.Status = "Ready"
+                    $readyCount++
+                } else {
+                    $service.Status = "Not Ready"
+                }
+
+                $service.LastCheck = $currentTime
+                # Check if status changed
+                if ($previousStatus[$serviceKey] -ne $service.Status) {
+                    $statusChanged = $true
+                    $logger.LogInfo("Status changed for $serviceKey - $($previousStatus[$serviceKey]) to $($service.Status)", "Health Monitor")
+                }
             }
-            
-            $service.LastCheck = $currentTime
-            # Check if status changed
-            if ($previousStatus[$serviceKey] -ne $service.Status) {
-                $statusChanged = $true
-                $logger.LogInfo("Status changed for $serviceKey - $($previousStatus[$serviceKey]) to $($service.Status)", "Health Monitor")
+
+            # Check if all services are ready
+            if ($readyCount -eq $totalCount) {
+                $servicesReady = $true
+                $logger.LogInfo("All services are ready! ($readyCount/$totalCount)", "Health Monitor")
             }
-        }
-        
-        # Check if all services are ready
-        if ($readyCount -eq $totalCount) {
-            $servicesReady = $true
-            $logger.LogInfo("All services are ready! ($readyCount/$totalCount)", "Health Monitor")
-        }
-        
-        # Display status (clear screen if status changed or first check)
-        if ($statusChanged -or $checkCount -eq 1) {
-            $logger.LogInfo("Displaying health status - Status changed: $statusChanged, Check count: $checkCount", "Health Monitor")
-            Clear-Host
-            Show-HealthStatus -Services $allServices -CheckCount $checkCount -StartTime $startTime
-        }
-        
-        # Log progress
-        $logger.LogInfo("Check #$checkCount completed - Ready: $readyCount/$totalCount", "Health Monitor")
-        
-        # Wait before next check (unless all services are ready)
-        if (-not $servicesReady) {
-            $logger.LogInfo("Waiting $CheckInterval seconds before next check...", "Health Monitor")
-            Start-Sleep -Seconds $CheckInterval
+
+            # Display status (clear screen if status changed or first check)
+            if ($statusChanged -or $checkCount -eq 1) {
+                $logger.LogInfo("Displaying health status - Status changed: $statusChanged, Check count: $checkCount", "Health Monitor")
+                Clear-Host
+                Show-HealthStatus -Services $allServices -CheckCount $checkCount -StartTime $startTime
+            }
+
+            # Log progress
+            $logger.LogInfo("Check #$checkCount completed - Ready: $readyCount/$totalCount", "Health Monitor")
+
+            # Wait before next check (unless all services are ready)
+            if (-not $servicesReady) {
+                $logger.LogInfo("[DIAG] Before Start-Sleep", "Health Monitor")
+                $logger.LogInfo("Waiting $CheckInterval seconds before next check...", "Health Monitor")
+                Start-Sleep -Seconds $CheckInterval
+                $logger.LogInfo("[DIAG] After Start-Sleep", "Health Monitor")
+            }
+            $logger.LogInfo("[DIAG] Loop iteration END (CheckCount=$checkCount)", "Health Monitor")
+        } catch {
+            $logger.LogError("[DIAG] Exception in main loop: $($_.Exception.Message)", "Health Monitor")
+            Write-Host "[DIAG] Exception in main loop: $($_.Exception.Message)" -ForegroundColor Red
+            break
         }
     }
     
