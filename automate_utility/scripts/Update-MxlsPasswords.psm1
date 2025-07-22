@@ -19,10 +19,14 @@ class UpdateMxlsPasswords : AutomationScript {
         
         $logger.LogInfo("Processing $($templateServers.Count) template servers for service account: $serviceAccount", "Automation")
         
+        # Initialize progress bar for MXLS steps (10 main steps)
+        $progressBar = Initialize-ProgressBar -TotalTasks 10 -Description "MXLS Password Encryption Process"
+        
         # Step 1: Get the new password from user
         Write-Activity "Step 1: Enter new password for $serviceAccount" -type 'info'
         $newPassword = Read-VerifiedPassword -Prompt "Enter the new password for $serviceAccount"
         $logger.LogUserInput("[PASSWORD ENTERED]", "New MXLS Password")
+        Update-ProgressBar -ProgressBar $progressBar -CurrentTask "Step 1: Password Entry"
         
         # Step 2: Process primary server (wp006) first
         $primaryServer = $templateServers | Where-Object { $_.name -eq 'phx-epmap-wp006' }
@@ -39,16 +43,19 @@ class UpdateMxlsPasswords : AutomationScript {
         try {
             $session = $debugHelper.NewPSSessionOrDebug($primaryServer.address, "Creating session to $($primaryServer.name)")
             $logger.LogServerOperation($primaryServer.name, "Session Creation", "SUCCESS")
+            Update-ProgressBar -ProgressBar $progressBar -CurrentTask "Step 2: Session Creation"
             
             # Step 3: Update Login.mxl with new password
             Write-Activity "Step 3: Updating Login.mxl with new password..." -type 'info'
             $loginPath = Join-Path $mxlsConfig.templates_path $mxlsConfig.login_file
             $this.UpdateLoginMxl($session, $loginPath, $newPassword, $serviceAccount)
+            Update-ProgressBar -ProgressBar $progressBar -CurrentTask "Step 3: Update Login.mxl"
             
             # Step 4: Generate encryption keys
             Write-Activity "Step 4: Generating encryption keys..." -type 'info'
             $generateKeyPath = Join-Path $mxlsConfig.templates_path $mxlsConfig.generate_key_bat
             $this.GenerateEncryptionKeys($session, $generateKeyPath)
+            Update-ProgressBar -ProgressBar $progressBar -CurrentTask "Step 4: Generate Keys"
             
             # Step 5: Get public key and update Encrypt Login.bat
             Write-Activity "Step 5: Updating Encrypt Login.bat with public key..." -type 'info'
@@ -56,31 +63,40 @@ class UpdateMxlsPasswords : AutomationScript {
             $encryptionKeyPath = Join-Path $mxlsConfig.templates_path $mxlsConfig.encryption_key_file
             $publicKey = $this.GetPublicKey($session, $encryptionKeyPath)
             $this.UpdateEncryptLoginBat($session, $encryptLoginPath, $publicKey)
+            Update-ProgressBar -ProgressBar $progressBar -CurrentTask "Step 5: Update Encrypt Login.bat"
             
             # Step 6: Backup and update Maxl.bat with private key
             Write-Activity "Step 6: Updating Maxl.bat with private key..." -type 'info'
             $maxlBatPath = Join-Path $mxlsConfig.scripts_path $mxlsConfig.maxl_bat_file
             $privateKey = $this.GetPrivateKey($session, $encryptionKeyPath)
             $this.UpdateMaxlBat($session, $maxlBatPath, $privateKey)
+            Update-ProgressBar -ProgressBar $progressBar -CurrentTask "Step 6: Update Maxl.bat"
             
             # Step 7: Run Encrypt Login.bat to generate Login.mxls
             Write-Activity "Step 7: Generating encrypted Login.mxls..." -type 'info'
             $this.RunEncryptLoginBat($session, $encryptLoginPath)
+            Update-ProgressBar -ProgressBar $progressBar -CurrentTask "Step 7: Generate Login.mxls"
             
             # Step 8: Extract keys from Login.mxls and update scripts Login.mxls
             Write-Activity "Step 8: Updating scripts Login.mxls with encryption keys..." -type 'info'
             $encryptedLoginPath = Join-Path $mxlsConfig.templates_path $mxlsConfig.encrypted_login_file
             $scriptsLoginMxlsPath = Join-Path $mxlsConfig.scripts_path $mxlsConfig.encrypted_login_file
             $this.UpdateScriptsLoginMxls($session, $encryptedLoginPath, $scriptsLoginMxlsPath)
+            Update-ProgressBar -ProgressBar $progressBar -CurrentTask "Step 8: Update Scripts Login.mxls"
             
             # Step 9: Hide password in Login.mxl
             Write-Activity "Step 9: Hiding password in Login.mxl..." -type 'info'
             $this.HidePasswordInLoginMxl($session, $loginPath, $serviceAccount)
+            Update-ProgressBar -ProgressBar $progressBar -CurrentTask "Step 9: Hide Password"
             
             # Step 10: Copy files to other servers
             Write-Activity "Step 10: Copying files to other template servers..." -type 'info'
             $otherServers = $templateServers | Where-Object { $_.name -ne 'phx-epmap-wp006' }
             $this.CopyFilesToOtherServers($session, $otherServers, $mxlsConfig)
+            Update-ProgressBar -ProgressBar $progressBar -CurrentTask "Step 10: Copy Files"
+            
+            # Complete progress bar
+            Complete-ProgressBar -ProgressBar $progressBar
             
             Write-Activity "MXLS Password Encryption completed successfully!" -type 'info'
             $logger.LogAutomationEnd("Update MXLS Passwords", $true)

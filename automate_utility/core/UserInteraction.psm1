@@ -12,9 +12,8 @@ function Show-Menu {
     )
     $logger = Get-Logger
     $menuOptions = @($Options)
-    if ($AllowBack) {
-        $menuOptions += "Go Back"
-    }
+    # Do NOT add 'Go Back' to $menuOptions; only use [b] for back
+    $isMainMenu = -not $AllowBack
     while ($true) {
         if ($ShowBanner) {
             $logoPath = $null
@@ -52,14 +51,40 @@ function Show-Menu {
         for ($i = 0; $i -lt $menuOptions.Length; $i++) {
             Write-Host ("    [$($i+1)] $($menuOptions[$i])")
         }
+        if (-not $isMainMenu) {
+            Write-Host "    [b] Go Back" -ForegroundColor Gray
+        }
+        if ($isMainMenu) {
+            Write-Host "    [d] Toggle Debug Mode" -ForegroundColor Gray
+        }
+        Write-Host "    [x] Exit" -ForegroundColor Gray
         Write-Host ""
-        $choice = Read-Host 'Enter choice number'
+        
+        $choice = Read-Host 'Enter choice number or special key'
         $logger.LogUserInput($choice, "Menu Choice")
+        
+        # Handle special keys first
+        $choice = $choice.ToLower().Trim()
+        if ($choice -eq 'x') {
+            Clear-Host
+            $logger.LogMenuSelection("Exit", $Title)
+            return '__EXIT__'
+        }
+        if ($choice -eq 'd' -and $isMainMenu) {
+            Clear-Host
+            $logger.LogMenuSelection("Toggle Debug", $Title)
+            return '__TOGGLE_DEBUG__'
+        }
+        if ($choice -eq 'b' -and $AllowBack -and -not $isMainMenu) {
+            Clear-Host
+            $logger.LogMenuSelection("Go Back", $Title)
+            return '__BACK__'
+        }
         
         # Handle empty input
         if ([string]::IsNullOrWhiteSpace($choice)) {
             Clear-Host
-            Write-Activity "No option selected. Please enter a valid choice number." -type 'warning'
+            Write-Activity "No option selected. Please enter a valid choice number or special key." -type 'warning'
             $logger.LogWarning("User entered empty choice", "Menu Input")
             Start-Sleep -Seconds 2
             continue
@@ -67,11 +92,6 @@ function Show-Menu {
         
         $selectedOption = if ($choice -as [int] -and $choice -ge 1 -and $choice -le $menuOptions.Length) { $menuOptions[$choice-1] } else { $null }
         if ($selectedOption) {
-            if ($AllowBack -and $selectedOption -eq "$([char]0xea9f) Go Back") {
-                Clear-Host
-                $logger.LogMenuSelection("Go Back", $Title)
-                return '__BACK__'
-            }
             $confirm = Read-Host "You selected '$selectedOption'. Confirm? (y/n)"
             $logger.LogUserInput($confirm, "Menu Confirmation")
             
@@ -87,7 +107,7 @@ function Show-Menu {
         } else {
             # Handle invalid input
             Clear-Host
-            Write-Activity "Invalid choice '$choice'. Please enter a number between 1 and $($menuOptions.Length)." -type 'warning'
+            Write-Activity "Invalid choice '$choice'. Please enter a number between 1 and $($menuOptions.Length) or a special key (b/d/x)." -type 'warning'
             $logger.LogWarning("User entered invalid choice: $choice", "Menu Input")
             Start-Sleep -Seconds 2
             continue
@@ -106,16 +126,16 @@ function Write-Activity {
         $logger = Get-Logger
         
         if ($type -eq 'info') {
-            Write-Host ("  $([char]0xF058) $Message") -ForegroundColor Green
+            Write-Host (" ~ $Message") -ForegroundColor Green
             $logger.LogInfo($Message, "Activity")
         } elseif ($type -eq 'error') {
-            Write-Host ("  $([char]0xebfb) $Message") -ForegroundColor Red
+            Write-Host (" ! $Message") -ForegroundColor Red
             $logger.LogError($Message, "Activity")
         } elseif ($type -eq 'warning') {
-            Write-Host ("  $([char]0xea6c) $Message") -ForegroundColor Yellow
+            Write-Host (" x $Message") -ForegroundColor Yellow
             $logger.LogWarning($Message, "Activity")
         } else {
-            Write-Host ("  $([char]0xF058) $Message") -ForegroundColor Green
+            Write-Host (" ~ $Message") -ForegroundColor Green
             $logger.LogInfo($Message, "Activity")
         }
     }
@@ -226,4 +246,59 @@ function Read-VerifiedPassword {
     }
 }
 
-Export-ModuleMember -Function Show-Menu, Write-Activity, Print-Activity, Write-Table, Write-BlankLine, Read-VerifiedPassword
+function Initialize-ProgressBar {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [int]$TotalTasks,
+        [string]$Description = "Processing tasks"
+    )
+    $logger = Get-Logger
+    $logger.LogInfo("Initializing progress bar for $TotalTasks tasks: $Description", "Progress Bar")
+    
+    $progressBar = [PSCustomObject]@{
+        TotalTasks = $TotalTasks
+        CompletedTasks = 0
+        Description = $Description
+        StartTime = Get-Date
+        Activity = $Description
+        Id = [System.Guid]::NewGuid().ToString()
+    }
+    
+    # Initial progress
+    Write-Progress -Id 1 -Activity $progressBar.Description -Status "Starting..." -PercentComplete 0
+    return $progressBar
+}
+
+function Update-ProgressBar {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [object]$ProgressBar,
+        [int]$CompletedTasks = 1,
+        [string]$CurrentTask = ""
+    )
+    $ProgressBar.CompletedTasks += $CompletedTasks
+    $percent = [Math]::Min(100, [Math]::Round(($ProgressBar.CompletedTasks / $ProgressBar.TotalTasks) * 100))
+    $status = if ($CurrentTask) { $CurrentTask } else { "$($ProgressBar.CompletedTasks)/$($ProgressBar.TotalTasks)" }
+    Write-Progress -Id 1 -Activity $ProgressBar.Description -Status $status -PercentComplete $percent
+    if ($percent % 10 -eq 0 -or $ProgressBar.CompletedTasks -eq $ProgressBar.TotalTasks) {
+        $logger = Get-Logger
+        $logger.LogInfo("Progress: $($ProgressBar.CompletedTasks)/$($ProgressBar.TotalTasks) tasks completed ($percent%)", "Progress Bar")
+    }
+}
+
+function Complete-ProgressBar {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [object]$ProgressBar
+    )
+    $logger = Get-Logger
+    $duration = (Get-Date) - $ProgressBar.StartTime
+    $logger.LogInfo("Progress bar completed. Total time: $($duration.ToString('mm\:ss'))", "Progress Bar")
+    Write-Progress -Id 1 -Activity $ProgressBar.Description -Status "Completed" -PercentComplete 100 -Completed
+    Write-Host ""
+}
+
+Export-ModuleMember -Function Show-Menu, Write-Activity, Print-Activity, Write-Table, Write-BlankLine, Read-VerifiedPassword, Initialize-ProgressBar, Update-ProgressBar, Complete-ProgressBar

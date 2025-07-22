@@ -10,8 +10,15 @@ debug: false
 servers:
   - name: 'example-server-1'
     address: 'example-server-1.domain.local'
+    tasks:
+      - 'BackupJob1'
+      - 'MaintenanceJob1'
+      - 'ReportJob1'
   - name: 'example-server-2'
     address: 'example-server-2.domain.local'
+    tasks:
+      - 'BackupJob2'
+      - 'CleanupJob2'
 
 # MXLS Template servers (specific to this automation)
 mxls_template_servers:
@@ -34,5 +41,7 @@ mxls_automation:
   encrypt_login_bat: 'Encrypt Login.bat'
   generate_key_bat: 'Generate Encrypt Key.bat'
   encryption_key_file: 'encryption_key.txt'
+
+
 
  

@@ -81,8 +81,52 @@ if ($debugHelper.IsDebug()) {
 function Show-MainMenu {
     while ($true) {
         Clear-Host
-        $category = Show-Menu -Config $yamlConfig -Title 'Select Task Category' -Options @('Quarterly Password Change', 'Toggle Debug Mode', 'Exit') -ShowBanner:$true -AllowBack:$false
+        $category = Show-Menu -Config $yamlConfig -Title 'Select Task Category' -Options @('Quarterly Password Change', 'Audit Requests', 'Patching') -ShowBanner:$true -AllowBack:$false
         if ($category -eq '__BACK__') { continue }
+        if ($category -eq '__EXIT__') {
+            $logger.LogInfo("User chose to exit from main menu", "User Action")
+            Write-Activity "Exiting application..." -type 'info'
+            Start-Sleep -Seconds 1
+            $logger.CloseSession()
+            exit
+        }
+        if ($category -eq '__TOGGLE_DEBUG__') {
+            $currentDebugStatus = if ($yamlConfig.debug) { "ENABLED" } else { "DISABLED" }
+            $newDebugStatus = if ($yamlConfig.debug) { $false } else { $true }
+            $newDebugStatusText = if ($newDebugStatus) { "ENABLED" } else { "DISABLED" }
+            
+            Write-Activity "Current Debug Mode: $currentDebugStatus" -type 'info'
+            Write-Activity "Switching Debug Mode to: $newDebugStatusText" -type 'info'
+            
+            try {
+                # Update the configuration file
+                $yamlConfig = Update-DebugSetting -ConfigPath $configPath -DebugEnabled $newDebugStatus
+                
+                # Update the global debug helper
+                $Global:DebugHelper = Get-DebugHelper
+                
+                Write-Activity "Debug Mode successfully switched to: $newDebugStatusText" -type 'info'
+                $logger.LogInfo("Debug Mode toggled from $currentDebugStatus to $newDebugStatusText", "Configuration")
+                
+                # Show updated status
+                Start-Sleep -Seconds 2
+                Clear-Host
+                if ($newDebugStatus) {
+                    Write-Host "DEBUG MODE ENABLED - Commands will be logged but not executed" -ForegroundColor Red
+                    $logger.LogInfo("DEBUG MODE ENABLED - Commands will be logged but not executed", "Debug")
+                } else {
+                    Write-Host "DEBUG MODE DISABLED - Commands will be executed normally" -ForegroundColor Green
+                    $logger.LogInfo("DEBUG MODE DISABLED - Commands will be executed normally", "Debug")
+                }
+                Start-Sleep -Seconds 2
+                
+            } catch {
+                Write-Activity "Failed to toggle debug mode: $($_.Exception.Message)" -type 'error'
+                $logger.LogError("Failed to toggle debug mode: $($_.Exception.Message)", "Configuration")
+                Start-Sleep -Seconds 3
+            }
+            continue
+        }
         
         $logger.LogMenuSelection($category, "Main Menu")
         
@@ -90,48 +134,11 @@ function Show-MainMenu {
             'Quarterly Password Change' {
                 Show-QuarterlyMenu
             }
-            'Toggle Debug Mode' {
-                $currentDebugStatus = if ($yamlConfig.debug) { "ENABLED" } else { "DISABLED" }
-                $newDebugStatus = if ($yamlConfig.debug) { $false } else { $true }
-                $newDebugStatusText = if ($newDebugStatus) { "ENABLED" } else { "DISABLED" }
-                
-                Write-Activity "Current Debug Mode: $currentDebugStatus" -type 'info'
-                Write-Activity "Switching Debug Mode to: $newDebugStatusText" -type 'info'
-                
-                try {
-                    # Update the configuration file
-                    $yamlConfig = Update-DebugSetting -ConfigPath $configPath -DebugEnabled $newDebugStatus
-                    
-                    # Update the global debug helper
-                    $Global:DebugHelper = Get-DebugHelper
-                    
-                    Write-Activity "Debug Mode successfully switched to: $newDebugStatusText" -type 'info'
-                    $logger.LogInfo("Debug Mode toggled from $currentDebugStatus to $newDebugStatusText", "Configuration")
-                    
-                    # Show updated status
-                    Start-Sleep -Seconds 2
-                    Clear-Host
-                    if ($newDebugStatus) {
-                        Write-Host "DEBUG MODE ENABLED - Commands will be logged but not executed" -ForegroundColor Red
-                        $logger.LogInfo("DEBUG MODE ENABLED - Commands will be logged but not executed", "Debug")
-                    } else {
-                        Write-Host "DEBUG MODE DISABLED - Commands will be executed normally" -ForegroundColor Green
-                        $logger.LogInfo("DEBUG MODE DISABLED - Commands will be executed normally", "Debug")
-                    }
-                    Start-Sleep -Seconds 2
-                    
-                } catch {
-                    Write-Activity "Failed to toggle debug mode: $($_.Exception.Message)" -type 'error'
-                    $logger.LogError("Failed to toggle debug mode: $($_.Exception.Message)", "Configuration")
-                    Start-Sleep -Seconds 3
-                }
+            'Audit Requests' {
+                Show-AuditMenu
             }
-            'Exit' {
-                $logger.LogInfo("User chose to exit from main menu", "User Action")
-                Write-Activity "Exiting application..." -type 'info'
-                Start-Sleep -Seconds 1
-                $logger.CloseSession()
-                exit
+            'Patching' {
+                Show-PatchingMenu
             }
         }
     }
@@ -158,13 +165,13 @@ function Show-QuarterlyMenu {
                 # After running, ask user what to do next
                 Write-BlankLine
                 Write-Activity "Automation completed. What would you like to do?" -type 'info'
-                $choice = Read-Host "Enter '1' to return to menu or 'q' to quit"
+                $choice = Read-Host "Enter '1' to return to quarterly menu or 'q' to quit"
                 $logger.LogUserInput($choice, "Post-Automation Choice")
                 
                 switch ($choice) {
                     '1' { 
-                        $logger.LogInfo("User chose to return to menu", "User Action")
-                        Write-Activity "Returning to menu..." -type 'info'
+                        $logger.LogInfo("User chose to return to quarterly menu", "User Action")
+                        Write-Activity "Returning to quarterly menu..." -type 'info'
                         Start-Sleep -Seconds 1
                         continue 
                     }
@@ -177,7 +184,7 @@ function Show-QuarterlyMenu {
                     }
                     default { 
                         $logger.LogWarning("Invalid choice entered: $choice", "User Input")
-                        Write-Activity "Invalid choice. Returning to menu..." -type 'warning'
+                        Write-Activity "Invalid choice. Returning to quarterly menu..." -type 'warning'
                         Start-Sleep -Seconds 2
                         continue 
                     }
@@ -192,13 +199,13 @@ function Show-QuarterlyMenu {
                 # After running, ask user what to do next
                 Write-BlankLine
                 Write-Activity "Automation completed. What would you like to do?" -type 'info'
-                $choice = Read-Host "Enter '1' to return to menu or 'q' to quit"
+                $choice = Read-Host "Enter '1' to return to quarterly menu or 'q' to quit"
                 $logger.LogUserInput($choice, "Post-Automation Choice")
                 
                 switch ($choice) {
                     '1' { 
-                        $logger.LogInfo("User chose to return to menu", "User Action")
-                        Write-Activity "Returning to menu..." -type 'info'
+                        $logger.LogInfo("User chose to return to quarterly menu", "User Action")
+                        Write-Activity "Returning to quarterly menu..." -type 'info'
                         Start-Sleep -Seconds 1
                         continue 
                     }
@@ -211,13 +218,47 @@ function Show-QuarterlyMenu {
                     }
                     default { 
                         $logger.LogWarning("Invalid choice entered: $choice", "User Input")
-                        Write-Activity "Invalid choice. Returning to menu..." -type 'warning'
+                        Write-Activity "Invalid choice. Returning to quarterly menu..." -type 'warning'
                         Start-Sleep -Seconds 2
                         continue 
                     }
                 }
             }
         }
+    }
+}
+
+function Show-AuditMenu {
+    while ($true) {
+        Clear-Host
+        $automation = Show-Menu -Config $yamlConfig -Title 'Audit Requests' -Options @() -ShowBanner:$true -AllowBack:$true
+        if ($automation -eq '__BACK__') { 
+            $logger.LogMenuSelection("Go Back", "Audit Menu")
+            return 
+        }
+        
+        $logger.LogMenuSelection($automation, "Audit Menu")
+        
+        # No automations configured yet
+        Write-Activity "No audit automations configured yet." -type 'info'
+        Start-Sleep -Seconds 2
+    }
+}
+
+function Show-PatchingMenu {
+    while ($true) {
+        Clear-Host
+        $automation = Show-Menu -Config $yamlConfig -Title 'Patching Automations' -Options @() -ShowBanner:$true -AllowBack:$true
+        if ($automation -eq '__BACK__') { 
+            $logger.LogMenuSelection("Go Back", "Patching Menu")
+            return 
+        }
+        
+        $logger.LogMenuSelection($automation, "Patching Menu")
+        
+        # No automations configured yet
+        Write-Activity "No patching automations configured yet." -type 'info'
+        Start-Sleep -Seconds 2
     }
 }
 
