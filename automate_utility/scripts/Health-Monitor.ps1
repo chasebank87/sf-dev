@@ -209,7 +209,7 @@ function Invoke-HealthMonitor {
     [UserInteraction]::WriteBlankLine()
     Write-Host "========================================" -ForegroundColor Cyan
     if ($servicesReady) {
-        [UserInteraction]::WriteActivity("ALL SERVICES ARE READY! 🎉", 'info')
+        [UserInteraction]::WriteActivity("ALL SERVICES ARE READY!", 'info')
         [UserInteraction]::WriteBlankLine()
         [UserInteraction]::WriteActivity("All monitored services are now responding", 'info')
         [UserInteraction]::WriteActivity("Total Duration: $($duration.ToString('hh\:mm\:ss'))", 'info')
