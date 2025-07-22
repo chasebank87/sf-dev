@@ -294,7 +294,8 @@ function Get-PortDescription {
     # Port description mappings based on your configuration
     $portDescriptions = @{
         "80" = "DRM Web HTTP"
-        "1423" = "Essbase Agent"
+        "443" = "DRM Web HTTPS"
+        "1423" = "Essbase"
         "5200-5400" = "DRM Service Ports"
         "5556" = "Node Manager"
         "6550" = "FDMEE HTTP"
@@ -305,17 +306,18 @@ function Get-PortDescription {
         "8205-8228" = "FR RMI Services"
         "8300" = "Planning HTTP"
         "8500" = "Calculation Manager HTTP"
-        "9010" = "Provider Services"
+        "13080" = "Provider Services"
         "9091" = "HFM Server"
         "9110" = "EAS Server"
         "10001-10020" = "HFM Datasource Range"
         "11333" = "Planning RMI"
         "12080" = "Essbase Studio HTTP"
-        "13080" = "Provider Services HTTP"
         "19000" = "OHS HTTP"
         "20910" = "ODI Standalone Agent"
         "28080" = "Foundation Services HTTP"
         "31768-32768" = "Essbase Application Ports"
+        "6712" = "OPMN"
+        "10080" = "EAS HTTP"
     }
     
     if ($portDescriptions.ContainsKey($Port)) {
