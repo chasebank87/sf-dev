@@ -163,11 +163,11 @@ function Invoke-HealthMonitor {
     $logger.LogInfo("All services ready: $servicesReady", "Health Monitor")
     
     if ($servicesReady) {
-        Write-Host "✅ All services are ready!" -ForegroundColor Green
+        Write-Host "All services are ready!" -ForegroundColor Green
         Write-Host "Duration: $($duration.ToString('hh\:mm\:ss'))" -ForegroundColor Cyan
         Write-Host "Checks performed: $checkCount" -ForegroundColor Cyan
     } else {
-        Write-Host "⏰ Timeout reached. Some services may not be ready." -ForegroundColor Yellow
+        Write-Host "Timeout reached. Some services may not be ready." -ForegroundColor Yellow
         Write-Host "Duration: $($duration.ToString('hh\:mm\:ss'))" -ForegroundColor Cyan
         Write-Host "Checks performed: $checkCount" -ForegroundColor Cyan
     }
