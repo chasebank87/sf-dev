@@ -177,10 +177,10 @@ function Test-PortConnectivity {
             
             # Test each port in the range
             for ($p = $startPort; $p -le $endPort; $p++) {
-                $testCmd = "Test-NetConnection -ComputerName '$Server' -Port $p -InformationLevel Quiet -WarningAction SilentlyContinue"
+                $testCmd = "Test-NetConnection -ComputerName '$Server' -Port $p -InformationLevel Quiet -WarningAction SilentlyContinue -InformationAction SilentlyContinue"
                 $debugHelper.LogCommand($testCmd, "Testing port $p on $Server")
                 
-                $result = $debugHelper.ExecuteOrDebug({ Test-NetConnection -ComputerName $Server -Port $p -InformationLevel Quiet -WarningAction SilentlyContinue }, "Testing port $p on $Server", "Test-NetConnection")
+                $result = $debugHelper.ExecuteOrDebug({ Test-NetConnection -ComputerName $Server -Port $p -InformationLevel Quiet -WarningAction SilentlyContinue -InformationAction SilentlyContinue }, "Testing port $p on $Server", "Test-NetConnection")
                 
                 if ($result) {
                     $logger.LogInfo("Port $p on $Server is accessible", "Health Monitor")
@@ -192,10 +192,10 @@ function Test-PortConnectivity {
             return $false
         } else {
             # Single port test
-            $testCmd = "Test-NetConnection -ComputerName '$Server' -Port $Port -InformationLevel Quiet -WarningAction SilentlyContinue"
+            $testCmd = "Test-NetConnection -ComputerName '$Server' -Port $Port -InformationLevel Quiet -WarningAction SilentlyContinue -InformationAction SilentlyContinue"
             $debugHelper.LogCommand($testCmd, "Testing port $Port on $Server")
             
-            $result = $debugHelper.ExecuteOrDebug({ Test-NetConnection -ComputerName $Server -Port $Port -InformationLevel Quiet -WarningAction SilentlyContinue }, "Testing port $Port on $Server", "Test-NetConnection")
+            $result = $debugHelper.ExecuteOrDebug({ Test-NetConnection -ComputerName $Server -Port $Port -InformationLevel Quiet -WarningAction SilentlyContinue -InformationAction SilentlyContinue }, "Testing port $Port on $Server", "Test-NetConnection")
             
             return $result
         }
