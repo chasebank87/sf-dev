@@ -78,6 +78,10 @@ function Invoke-HealthMonitor {
     
     $logger.LogInfo("Total services to monitor: $($allServices.Count)", "Health Monitor")
     
+    # Show initial status with all services as 'Unknown' before starting checks
+    Clear-Host
+    Show-HealthStatus -Services $allServices -CheckCount 0 -StartTime $startTime
+    
     # Main monitoring loop
     while (-not $servicesReady -and ((Get-Date) - $startTime).TotalSeconds -lt $Timeout) {
         $checkCount++
