@@ -46,7 +46,7 @@ class UserInteraction {
                 Write-Host "    [b] Go Back" -ForegroundColor Cyan
             }
             if ($isMainMenu) {
-                Write-Host "    [d] Toggle Debug Mode" -ForegroundColor DarkYellow
+                Write-Host "    [d] Toggle Debug Mode" -ForegroundColor Yellow
             }
             Write-Host "    [x] Exit" -ForegroundColor Red
             Write-Host ""
