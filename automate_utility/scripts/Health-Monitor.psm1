@@ -108,7 +108,6 @@ function Invoke-HealthMonitor {
             }
             
             $service.LastCheck = $currentTime
-            
             # Check if status changed
             if ($previousStatus[$serviceKey] -ne $service.Status) {
                 $statusChanged = $true
