@@ -1,5 +1,7 @@
-Import-Module "$PSScriptRoot/../core/DebugHelper.psm1" -Force
-Import-Module "$PSScriptRoot/../core/UserInteraction.psm1" -Force
+using module ..\core\AutomationScript.psm1
+using module ..\core\UserInteraction.psm1
+using module ..\core\Logger.psm1
+using module ..\core\DebugHelper.psm1
 
 function Invoke-HealthMonitor {
     [CmdletBinding()]
