@@ -184,7 +184,7 @@ function Test-PortConnectivity {
         [object]$DebugHelper,
         [Parameter(Mandatory)]
         [hashtable]$LoggedErrors,
-        [int]$TimeoutSeconds = 2
+        [double]$TimeoutSeconds = 0.2
     )
     
     try {
@@ -197,34 +197,39 @@ function Test-PortConnectivity {
             # Test each port in the range
             for ($p = $startPort; $p -le $endPort; $p++) {
                 $testCmd = "TcpClient test to $Server`:$p with ${TimeoutSeconds}s timeout"
+                $logger = Get-Logger
+                $logger.LogInfo("[DIAG] (Range) Before port $p on $Server", "Health Monitor")
                 $debugHelper.LogCommand($testCmd, "Testing port $p on $Server with ${TimeoutSeconds}s timeout")
-                
+
                 if ($debugHelper.ShouldExecuteCommand("Test-NetConnection")) {
                     # Use TcpClient for faster, silent testing
                     try {
                         $tcpClient = New-Object System.Net.Sockets.TcpClient
                         $asyncResult = $tcpClient.BeginConnect($Server, $p, $null, $null)
-                        $success = $asyncResult.AsyncWaitHandle.WaitOne($TimeoutSeconds * 1000, $false)
-                        
+                        $success = $asyncResult.AsyncWaitHandle.WaitOne([int]($TimeoutSeconds * 1000), $false)
+
                         if ($success) {
                             try {
                                 $tcpClient.EndConnect($asyncResult)
                                 $logger.LogInfo("Port $p on $Server is accessible", "Health Monitor")
+                                $logger.LogInfo("[DIAG] (Range) After port $p on $Server (SUCCESS)", "Health Monitor")
                                 return $true
                             } finally {
                                 $tcpClient.Close()
                             }
                         } else {
-                            # Timeout occurred
                             $tcpClient.Close()
+                            $logger.LogInfo("[DIAG] (Range) After port $p on $Server (TIMEOUT)", "Health Monitor")
                         }
                     } catch {
                         # Connection failed - continue to next port
                         if ($tcpClient) { $tcpClient.Close() }
+                        $logger.LogInfo("[DIAG] (Range) After port $p on $Server (EXCEPTION)", "Health Monitor")
                     }
                 } else {
                     # Debug mode - just log the command
                     $debugHelper.LogCommand($testCmd, "Testing port $p on $Server")
+                    $logger.LogInfo("[DIAG] (Range) After port $p on $Server (DEBUG)", "Health Monitor")
                 }
             }
             
