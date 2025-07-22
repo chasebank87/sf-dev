@@ -21,7 +21,7 @@ $exampleConfigPath = "$PSScriptRoot/config/example.yaml"
 function Test-ConfigurationSetup {
     # Check if dev.yaml exists
     if (-not (Test-Path $configPath)) {
-        Write-Host "`n❌ CONFIGURATION ERROR" -ForegroundColor Red
+        Write-Host "`n CONFIGURATION ERROR" -ForegroundColor Red
         Write-Host "===============================================" -ForegroundColor Red
         Write-Host "The configuration file 'config/dev.yaml' is missing!" -ForegroundColor Yellow
         Write-Host ""
@@ -51,13 +51,13 @@ function Test-ConfigurationSetup {
     
     # Check if example.yaml exists (for reference)
     if (-not (Test-Path $exampleConfigPath)) {
-        Write-Host "`n⚠️  WARNING" -ForegroundColor Yellow
+        Write-Host "`n  WARNING" -ForegroundColor Yellow
         Write-Host "The example configuration file 'config/example.yaml' is missing." -ForegroundColor Yellow
         Write-Host "This file should be available for reference. Please check your installation." -ForegroundColor Yellow
         Write-Host ""
     }
     
-    Write-Host "✅ Configuration file found: $configPath" -ForegroundColor Green
+    Write-Host "Configuration file found: $configPath" -ForegroundColor Green
 }
 
 # Run configuration check
@@ -81,7 +81,7 @@ if ($debugHelper.IsDebug()) {
 function Show-MainMenu {
     while ($true) {
         Clear-Host
-        $category = Show-Menu -Config $yamlConfig -Title 'Select Task Category' -Options @('Quarterly Password Change', 'Audit Requests', 'Patching') -ShowBanner:$true -AllowBack:$false
+        $category = Show-Menu -Config $yamlConfig -Title 'Select Task Category' -Options @('Quarterly Password Change', 'Monthly Close Process', 'Audit Requests', 'Patching', 'Administration') -ShowBanner:$true -AllowBack:$false
         if ($category -eq '__BACK__') { continue }
         if ($category -eq '__EXIT__') {
             $logger.LogInfo("User chose to exit from main menu", "User Action")
@@ -91,40 +91,40 @@ function Show-MainMenu {
             exit
         }
         if ($category -eq '__TOGGLE_DEBUG__') {
-            $currentDebugStatus = if ($yamlConfig.debug) { "ENABLED" } else { "DISABLED" }
-            $newDebugStatus = if ($yamlConfig.debug) { $false } else { $true }
-            $newDebugStatusText = if ($newDebugStatus) { "ENABLED" } else { "DISABLED" }
-            
-            Write-Activity "Current Debug Mode: $currentDebugStatus" -type 'info'
-            Write-Activity "Switching Debug Mode to: $newDebugStatusText" -type 'info'
-            
-            try {
-                # Update the configuration file
+                $currentDebugStatus = if ($yamlConfig.debug) { "ENABLED" } else { "DISABLED" }
+                $newDebugStatus = if ($yamlConfig.debug) { $false } else { $true }
+                $newDebugStatusText = if ($newDebugStatus) { "ENABLED" } else { "DISABLED" }
+                
+                Write-Activity "Current Debug Mode: $currentDebugStatus" -type 'info'
+                Write-Activity "Switching Debug Mode to: $newDebugStatusText" -type 'info'
+                
+                try {
+                    # Update the configuration file
                 $yamlConfig = Update-DebugSetting -ConfigPath $configPath -DebugEnabled $newDebugStatus
-                
-                # Update the global debug helper
-                $Global:DebugHelper = Get-DebugHelper
-                
-                Write-Activity "Debug Mode successfully switched to: $newDebugStatusText" -type 'info'
-                $logger.LogInfo("Debug Mode toggled from $currentDebugStatus to $newDebugStatusText", "Configuration")
-                
-                # Show updated status
-                Start-Sleep -Seconds 2
-                Clear-Host
-                if ($newDebugStatus) {
-                    Write-Host "DEBUG MODE ENABLED - Commands will be logged but not executed" -ForegroundColor Red
-                    $logger.LogInfo("DEBUG MODE ENABLED - Commands will be logged but not executed", "Debug")
-                } else {
-                    Write-Host "DEBUG MODE DISABLED - Commands will be executed normally" -ForegroundColor Green
-                    $logger.LogInfo("DEBUG MODE DISABLED - Commands will be executed normally", "Debug")
+                    
+                    # Update the global debug helper
+                    $Global:DebugHelper = Get-DebugHelper
+                    
+                    Write-Activity "Debug Mode successfully switched to: $newDebugStatusText" -type 'info'
+                    $logger.LogInfo("Debug Mode toggled from $currentDebugStatus to $newDebugStatusText", "Configuration")
+                    
+                    # Show updated status
+                    Start-Sleep -Seconds 2
+                    Clear-Host
+                    if ($newDebugStatus) {
+                        Write-Host "DEBUG MODE ENABLED - Commands will be logged but not executed" -ForegroundColor Red
+                        $logger.LogInfo("DEBUG MODE ENABLED - Commands will be logged but not executed", "Debug")
+                    } else {
+                        Write-Host "DEBUG MODE DISABLED - Commands will be executed normally" -ForegroundColor Green
+                        $logger.LogInfo("DEBUG MODE DISABLED - Commands will be executed normally", "Debug")
+                    }
+                    Start-Sleep -Seconds 2
+                    
+                } catch {
+                    Write-Activity "Failed to toggle debug mode: $($_.Exception.Message)" -type 'error'
+                    $logger.LogError("Failed to toggle debug mode: $($_.Exception.Message)", "Configuration")
+                    Start-Sleep -Seconds 3
                 }
-                Start-Sleep -Seconds 2
-                
-            } catch {
-                Write-Activity "Failed to toggle debug mode: $($_.Exception.Message)" -type 'error'
-                $logger.LogError("Failed to toggle debug mode: $($_.Exception.Message)", "Configuration")
-                Start-Sleep -Seconds 3
-            }
             continue
         }
         
@@ -134,11 +134,46 @@ function Show-MainMenu {
             'Quarterly Password Change' {
                 Show-QuarterlyMenu
             }
+            'Monthly Close Process' {
+                Write-Activity "No monthly close scripts configured yet." -type 'info'
+                Start-Sleep -Seconds 2
+                
+                # After showing message, ask user what to do next
+                Write-BlankLine
+                Write-Activity "What would you like to do?" -type 'info'
+                $choice = Read-Host "Enter '1' to return to main menu or 'q' to quit"
+                $logger.LogUserInput($choice, "Post-Message Choice")
+                
+                switch ($choice) {
+                    '1' { 
+                        $logger.LogInfo("User chose to return to main menu", "User Action")
+                        Write-Activity "Returning to main menu..." -type 'info'
+                        Start-Sleep -Seconds 1
+                        continue 
+                    }
+                    'q' { 
+                        $logger.LogInfo("User chose to quit application", "User Action")
+                        Write-Activity "Exiting application..." -type 'info'
+                        Start-Sleep -Seconds 1
+                        $logger.CloseSession()
+                        exit 
+                    }
+                    default { 
+                        $logger.LogWarning("Invalid choice entered: $choice", "User Input")
+                        Write-Activity "Invalid choice. Returning to main menu..." -type 'warning'
+                        Start-Sleep -Seconds 2
+                        continue 
+                    }
+                }
+            }
             'Audit Requests' {
                 Show-AuditMenu
             }
             'Patching' {
                 Show-PatchingMenu
+            }
+            'Administration' {
+                Show-AdminMenu
             }
         }
     }
@@ -242,6 +277,34 @@ function Show-AuditMenu {
         # No automations configured yet
         Write-Activity "No audit automations configured yet." -type 'info'
         Start-Sleep -Seconds 2
+        
+        # After showing message, ask user what to do next
+        Write-BlankLine
+        Write-Activity "What would you like to do?" -type 'info'
+        $choice = Read-Host "Enter '1' to return to audit menu or 'q' to quit"
+        $logger.LogUserInput($choice, "Post-Message Choice")
+        
+        switch ($choice) {
+            '1' { 
+                $logger.LogInfo("User chose to return to audit menu", "User Action")
+                Write-Activity "Returning to audit menu..." -type 'info'
+                Start-Sleep -Seconds 1
+                continue 
+            }
+            'q' { 
+                $logger.LogInfo("User chose to quit application", "User Action")
+                Write-Activity "Exiting application..." -type 'info'
+                Start-Sleep -Seconds 1
+                $logger.CloseSession()
+                exit 
+            }
+            default { 
+                $logger.LogWarning("Invalid choice entered: $choice", "User Input")
+                Write-Activity "Invalid choice. Returning to audit menu..." -type 'warning'
+                Start-Sleep -Seconds 2
+                continue 
+            }
+        }
     }
 }
 
@@ -259,6 +322,146 @@ function Show-PatchingMenu {
         # No automations configured yet
         Write-Activity "No patching automations configured yet." -type 'info'
         Start-Sleep -Seconds 2
+        
+        # After showing message, ask user what to do next
+        Write-BlankLine
+        Write-Activity "What would you like to do?" -type 'info'
+        $choice = Read-Host "Enter '1' to return to patching menu or 'q' to quit"
+        $logger.LogUserInput($choice, "Post-Message Choice")
+        
+        switch ($choice) {
+            '1' { 
+                $logger.LogInfo("User chose to return to patching menu", "User Action")
+                Write-Activity "Returning to patching menu..." -type 'info'
+                Start-Sleep -Seconds 1
+                continue 
+            }
+            'q' { 
+                $logger.LogInfo("User chose to quit application", "User Action")
+                Write-Activity "Exiting application..." -type 'info'
+                Start-Sleep -Seconds 1
+                $logger.CloseSession()
+                exit 
+            }
+            default { 
+                $logger.LogWarning("Invalid choice entered: $choice", "User Input")
+                Write-Activity "Invalid choice. Returning to patching menu..." -type 'warning'
+                Start-Sleep -Seconds 2
+                continue 
+            }
+        }
+    }
+}
+
+function Show-AdminMenu {
+    while ($true) {
+        Clear-Host
+        $adminOption = Show-Menu -Config $yamlConfig -Title 'Administration' -Options @('Start Environment', 'Stop Environment', 'Health Monitor') -ShowBanner:$true -AllowBack:$true
+        if ($adminOption -eq '__BACK__' -or $adminOption -eq '__EXIT__') { return }
+        switch ($adminOption) {
+            'Start Environment' {
+                $logger.LogAutomationStart("Start Environment")
+                Import-Module "$PSScriptRoot/scripts/Admin-Environment.psm1" -Force
+                Invoke-AdminEnvironment -Config $yamlConfig -Mode 'Start'
+                $logger.LogAutomationEnd("Start Environment", $true)
+                
+                # After running, ask user what to do next
+                Write-BlankLine
+                Write-Activity "Automation completed. What would you like to do?" -type 'info'
+                $choice = Read-Host "Enter '1' to return to administration menu or 'q' to quit"
+                $logger.LogUserInput($choice, "Post-Automation Choice")
+                
+                switch ($choice) {
+                    '1' { 
+                        $logger.LogInfo("User chose to return to administration menu", "User Action")
+                        Write-Activity "Returning to administration menu..." -type 'info'
+                        Start-Sleep -Seconds 1
+                        continue 
+                    }
+                    'q' { 
+                        $logger.LogInfo("User chose to quit application", "User Action")
+                        Write-Activity "Exiting application..." -type 'info'
+                        Start-Sleep -Seconds 1
+                        $logger.CloseSession()
+                        exit 
+                    }
+                    default { 
+                        $logger.LogWarning("Invalid choice entered: $choice", "User Input")
+                        Write-Activity "Invalid choice. Returning to administration menu..." -type 'warning'
+                        Start-Sleep -Seconds 2
+                        continue 
+                    }
+                }
+            }
+            'Stop Environment' {
+                $logger.LogAutomationStart("Stop Environment")
+                Import-Module "$PSScriptRoot/scripts/Admin-Environment.psm1" -Force
+                Invoke-AdminEnvironment -Config $yamlConfig -Mode 'Stop'
+                $logger.LogAutomationEnd("Stop Environment", $true)
+                
+                # After running, ask user what to do next
+                Write-BlankLine
+                Write-Activity "Automation completed. What would you like to do?" -type 'info'
+                $choice = Read-Host "Enter '1' to return to administration menu or 'q' to quit"
+                $logger.LogUserInput($choice, "Post-Automation Choice")
+                
+                switch ($choice) {
+                    '1' { 
+                        $logger.LogInfo("User chose to return to administration menu", "User Action")
+                        Write-Activity "Returning to administration menu..." -type 'info'
+                        Start-Sleep -Seconds 1
+                        continue 
+                    }
+                    'q' { 
+                        $logger.LogInfo("User chose to quit application", "User Action")
+                        Write-Activity "Exiting application..." -type 'info'
+                        Start-Sleep -Seconds 1
+                        $logger.CloseSession()
+                        exit 
+                    }
+                    default { 
+                        $logger.LogWarning("Invalid choice entered: $choice", "User Input")
+                        Write-Activity "Invalid choice. Returning to administration menu..." -type 'warning'
+                        Start-Sleep -Seconds 2
+                        continue 
+                    }
+                }
+            }
+            'Health Monitor' {
+                $logger.LogAutomationStart("Health Monitor")
+                Import-Module "$PSScriptRoot/scripts/Health-Monitor.psm1" -Force
+                $result = Invoke-HealthMonitor -Config $yamlConfig
+                $logger.LogAutomationEnd("Health Monitor", $result)
+                
+                # After running, ask user what to do next
+                Write-BlankLine
+                Write-Activity "Health monitoring completed. What would you like to do?" -type 'info'
+                $choice = Read-Host "Enter '1' to return to administration menu or 'q' to quit"
+                $logger.LogUserInput($choice, "Post-Automation Choice")
+                
+                switch ($choice) {
+                    '1' { 
+                        $logger.LogInfo("User chose to return to administration menu", "User Action")
+                        Write-Activity "Returning to administration menu..." -type 'info'
+                        Start-Sleep -Seconds 1
+                        continue 
+                    }
+                    'q' { 
+                        $logger.LogInfo("User chose to quit application", "User Action")
+                        Write-Activity "Exiting application..." -type 'info'
+                        Start-Sleep -Seconds 1
+                        $logger.CloseSession()
+                        exit 
+                    }
+                    default { 
+                        $logger.LogWarning("Invalid choice entered: $choice", "User Input")
+                        Write-Activity "Invalid choice. Returning to administration menu..." -type 'warning'
+                        Start-Sleep -Seconds 2
+                        continue 
+                    }
+                }
+            }
+        }
     }
 }
 

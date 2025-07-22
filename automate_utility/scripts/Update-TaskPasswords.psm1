@@ -62,13 +62,20 @@ class UpdateTaskPasswords : AutomationScript {
                     Write-Activity "Checking $($serverExpectedTasks.Count) expected tasks for ${serverName}..." -type 'info'
                     foreach ($expectedTask in $serverExpectedTasks) {
                         # Check if this expected task exists on the server
-                        $taskExists = $allServerTasks | Where-Object { $_.TaskName -eq $expectedTask }
-                        if ($taskExists) {
-                            # Add to combined list if not already included
-                            if ($expectedTask -notin $combinedTasks) {
+                        $taskObj = $allServerTasks | Where-Object { $_.TaskName -eq $expectedTask }
+                        if ($taskObj) {
+                            # Check if the principal is the service account
+                            $dynamicTaskObj = $dynamicTasks | Where-Object { $_.TaskName -eq $expectedTask }
+                            if ($dynamicTaskObj) {
+                                # Already using service account, already in combinedTasks
+                                if ($expectedTask -notin $combinedTasks) {
+                                    $combinedTasks += $expectedTask
+                                }
+                            } else {
+                                # Exists but not using service account
                                 $combinedTasks += $expectedTask
-                                Write-Activity "Added expected task '$expectedTask' to update list for ${serverName}." -type 'info'
-                                $logger.LogServerOperation($serverName, "Task Discovery", "Added expected task: $expectedTask")
+                                Write-Activity "Expected task '$expectedTask' exists on ${serverName} but is not using the service account. This process will change it to use the service account." -type 'warning'
+                                $logger.LogServerOperation($serverName, "Task Discovery", "Expected task exists but not using service account: $expectedTask. Will update.")
                             }
                         } else {
                             $missingExpectedTasks += $expectedTask
@@ -93,9 +100,9 @@ class UpdateTaskPasswords : AutomationScript {
                 } else {
                     Write-Activity "Found $($combinedTasks.Count) total tasks for ${serviceAccount} on ${serverName}." -type 'info'
                     $logger.LogServerOperation($serverName, "Task Retrieval", "Found $($combinedTasks.Count) total tasks")
-                    
-                    $allResults += [PSCustomObject]@{
-                        Server = "$serverName ($serverAddress)"
+                
+                $allResults += [PSCustomObject]@{
+                    Server = "$serverName ($serverAddress)"
                         Tasks  = $combinedTasks
                         MissingExpected = $missingExpectedTasks
                     }
@@ -119,7 +126,7 @@ class UpdateTaskPasswords : AutomationScript {
         $serversWithMissingTasks = $allResults | Where-Object { $_.MissingExpected -and $_.MissingExpected.Count -gt 0 }
         if ($serversWithMissingTasks.Count -gt 0) {
             Write-BlankLine
-            Write-Activity "⚠️  WARNING: The following expected tasks were not found on some servers:" -type 'warning'
+            Write-Activity "The following expected tasks were not found on some servers:" -type 'warning'
             $logger.LogWarning("$($serversWithMissingTasks.Count) servers have missing expected tasks", "Task Discovery")
             
             foreach ($result in $serversWithMissingTasks) {
@@ -265,7 +272,7 @@ class UpdateTaskPasswords : AutomationScript {
 
         # Complete progress bar
         Complete-ProgressBar -ProgressBar $progressBar
-        
+
         # Log final summary
         $logger.LogInfo("Password update operation completed. Success: $successCount, Failures: $failureCount, Skipped: $($notFoundTasks.Count)", "Automation")
 

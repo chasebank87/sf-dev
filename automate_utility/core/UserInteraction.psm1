@@ -101,7 +101,7 @@ function Show-Menu {
             } else {
                 Clear-Host
                 Write-Activity "Selection not confirmed. Please choose again." -type 'warning'
-                $logger.LogWarning("Menu selection not confirmed by user")
+                $logger.LogWarning("Menu selection not confirmed by user", "Menu Input")
                 # Loop will reload the menu
             }
         } else {
