@@ -372,35 +372,23 @@ function Show-AdminMenu {
             'Health Monitor' {
                 $logger.LogAutomationStart("Health Monitor")
                 $result = Invoke-HealthMonitor -Config $yamlConfig
+                
+                # Health Monitor now handles its own confirmation and returns either '__BACK__' or '__EXIT__'
                 if ($result -eq '__BACK__') {
-                    # User chose to go back to menu, do not log automation end
-                    return
-                }
-                $logger.LogAutomationEnd("Health Monitor", $result)
-                [UserInteraction]::WriteBlankLine()
-                [UserInteraction]::WriteActivity("Health monitoring completed. What would you like to do?", 'info')
-                $choice = Read-Host "Enter '1' to return to administration menu or 'q' to quit"
-                $logger.LogUserInput($choice, "Post-Automation Choice")
-                switch ($choice) {
-                    '1' {
-                        $logger.LogInfo("User chose to return to administration menu", "User Action")
-                        [UserInteraction]::WriteActivity("Returning to administration menu...", 'info')
-                        Start-Sleep -Seconds 1
-                        continue
-                    }
-                    'q' {
-                        $logger.LogInfo("User chose to quit application", "User Action")
-                        [UserInteraction]::WriteActivity("Exiting application...", 'info')
-                        Start-Sleep -Seconds 1
-                        $logger.CloseSession()
-                        exit
-                    }
-                    default {
-                        $logger.LogWarning("Invalid choice entered: $choice", "User Input")
-                        [UserInteraction]::WriteActivity("Invalid choice. Returning to administration menu...", 'warning')
-                        Start-Sleep -Seconds 2
-                        continue
-                    }
+                    # User chose to go back to menu
+                    $logger.LogInfo("User chose to return to administration menu from health monitor", "User Action")
+                    continue
+                } elseif ($result -eq '__EXIT__') {
+                    # User chose to exit application
+                    $logger.LogInfo("User chose to exit application from health monitor", "User Action")
+                    [UserInteraction]::WriteActivity("Exiting application...", 'info')
+                    Start-Sleep -Seconds 1
+                    $logger.CloseSession()
+                    exit
+                } else {
+                    # For any other result, log completion and continue to menu
+                    $logger.LogAutomationEnd("Health Monitor", $result)
+                    continue
                 }
             }
         }

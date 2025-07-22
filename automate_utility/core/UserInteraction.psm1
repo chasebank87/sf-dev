@@ -129,7 +129,7 @@ class UserInteraction {
         }
     }
 
-    [void] WriteTable([array]$Data, [string[]]$Columns, [string[]]$Headers, [string[]]$Alignments = @()) {
+    [void] WriteTable([array]$Data, [string[]]$Columns, [string[]]$Headers, [string[]]$Alignments = @(), [hashtable]$ColorMappings = @{}) {
         $logger = Get-Logger
         $logger.LogInfo("Displaying table with $($Data.Count) rows and $($Columns.Count) columns", "Table Display")
         if (-not $Headers) { $Headers = $Columns }
@@ -175,14 +175,22 @@ class UserInteraction {
                 }
             }
             for ($lineIdx = 0; $lineIdx -lt $maxLines; $lineIdx++) {
-                $lineStr = ""
                 for ($i = 0; $i -lt $rowValues.Count; $i++) {
                     $cellLines = $rowValues[$i]
                     $cellVal = if ($lineIdx -lt $cellLines.Count) { $cellLines[$lineIdx] } else { "" }
-                    $lineStr += $cellVal.PadRight($colWidths[$i])
-                    if ($i -lt $rowValues.Count - 1) { $lineStr += " | " }
+                    $paddedVal = $cellVal.PadRight($colWidths[$i])
+                    
+                    # Check for custom color mapping for this column and value
+                    $columnName = $Columns[$i]
+                    $color = "White"  # Default color
+                    if ($ColorMappings.ContainsKey($columnName) -and $ColorMappings[$columnName].ContainsKey($cellVal)) {
+                        $color = $ColorMappings[$columnName][$cellVal]
+                    }
+                    
+                    Write-Host $paddedVal -ForegroundColor $color -NoNewline
+                    if ($i -lt $rowValues.Count - 1) { Write-Host " | " -NoNewline }
                 }
-                Write-Host $lineStr
+                Write-Host ""  # New line after each row
             }
             Write-Host $sepLine -ForegroundColor Magenta
         }
@@ -192,11 +200,12 @@ class UserInteraction {
         Write-Host ""
     }
 
-    static [void] WriteTable([array]$Data, [string[]]$Columns, [object]$Headers = $null, [object]$Alignments = $null) {
+    static [void] WriteTable([array]$Data, [string[]]$Columns, [object]$Headers = $null, [object]$Alignments = $null, [object]$ColorMappings = $null) {
         if ($null -eq $Headers) { $Headers = $Columns }
         if ($null -eq $Alignments) { $Alignments = @() }
+        if ($null -eq $ColorMappings) { $ColorMappings = @{} }
         $ui = [UserInteraction]::new()
-        $ui.WriteTable($Data, $Columns, $Headers, $Alignments)
+        $ui.WriteTable($Data, $Columns, $Headers, $Alignments, $ColorMappings)
     }
 
     [System.Security.SecureString] ReadVerifiedPassword([string]$Prompt = "Enter password") {
@@ -278,6 +287,26 @@ class UserInteraction {
         Write-Host ""  # Move to next line after timeout
         return $null
     }
+
+    static [void] WriteInlineProgressBar([int]$Current, [int]$Total, [string]$Label = "Progress", [int]$BarWidth = 20) {
+        $logger = Get-Logger
+        
+        # Calculate percentage
+        $percentage = if ($Total -gt 0) { [Math]::Round(($Current / $Total) * 100) } else { 0 }
+        
+        # Calculate filled and empty blocks
+        $filledBlocks = [Math]::Floor($percentage * $BarWidth / 100)
+        $emptyBlocks = $BarWidth - $filledBlocks
+        
+        # Create the progress bar
+        $progressBar = ("#" * $filledBlocks) + ("-" * $emptyBlocks)
+        
+        # Display the progress bar with label
+        Write-Host "$Label`: [$progressBar] $percentage% ($Current/$Total)" -ForegroundColor Cyan
+        
+        # Log progress for audit trail
+        $logger.LogInfo("$Label`: $Current/$Total complete ($percentage%)", "Progress Display")
+    }
 }
 
 # Global UserInteraction instance
@@ -307,9 +336,15 @@ function Write-Activity {
 }
 
 function Write-Table {
-    param([array]$Data, [string[]]$Columns, [string[]]$Headers, [string[]]$Alignments = @())
+    param(
+        [array]$Data, 
+        [string[]]$Columns, 
+        [string[]]$Headers, 
+        [string[]]$Alignments = @(),
+        [hashtable]$ColorMappings = @{}
+    )
     $ui = Get-UserInteraction
-    $ui.WriteTable($Data, $Columns, $Headers, $Alignments)
+    $ui.WriteTable($Data, $Columns, $Headers, $Alignments, $ColorMappings)
 }
 
 function Write-BlankLine {
@@ -340,4 +375,16 @@ function Complete-ProgressBar {
     $ui.CompleteProgressBar($ProgressBar)
 }
 
-Export-ModuleMember -Function Initialize-UserInteraction, Get-UserInteraction, Show-Menu, Write-Activity, Write-Table, Write-BlankLine, Read-VerifiedPassword, Initialize-ProgressBar, Update-ProgressBar, Complete-ProgressBar
+function Write-InlineProgressBar {
+    param(
+        [Parameter(Mandatory)]
+        [int]$Current,
+        [Parameter(Mandatory)]
+        [int]$Total,
+        [string]$Label = "Progress",
+        [int]$BarWidth = 20
+    )
+    [UserInteraction]::WriteInlineProgressBar($Current, $Total, $Label, $BarWidth)
+}
+
+Export-ModuleMember -Function Initialize-UserInteraction, Get-UserInteraction, Show-Menu, Write-Activity, Write-Table, Write-BlankLine, Read-VerifiedPassword, Initialize-ProgressBar, Update-ProgressBar, Complete-ProgressBar, Write-InlineProgressBar
