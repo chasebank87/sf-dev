@@ -90,7 +90,10 @@ class DebugHelper {
             'Get-ComputerInfo',
             'Get-PSSession',
             'Get-Module',
-            'Get-Command'
+            'Get-Command',
+            'Test-NetConnection',
+            'Test-Connection',
+            'TcpClient'
         )
         
         foreach ($allowed in $allowedCommands) {

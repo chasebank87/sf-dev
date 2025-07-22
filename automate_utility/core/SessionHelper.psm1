@@ -296,7 +296,10 @@ class SessionHelper {
             'Where-Object',
             'Select-Object',
             'ForEach-Object',
-            'Measure-Object'
+            'Measure-Object',
+            'Test-NetConnection',
+            'Test-Connection',
+            'TcpClient'
         )
         
         # Check if the script contains primarily safe commands
