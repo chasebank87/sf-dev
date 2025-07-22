@@ -508,9 +508,7 @@ function Show-HealthStatus {
     Write-InlineProgressBar -Current $readyCount -Total $totalCount -Label "Service Status"
     [UserInteraction]::WriteBlankLine()
     
-    if ($readyCount -eq $totalCount) {
-        [UserInteraction]::WriteActivity("ALL SERVICES ARE READY!", 'info')
-    } else {
+    if ($readyCount -ne $totalCount) {
         [UserInteraction]::WriteActivity("Waiting for services to become ready...", 'warning')
     }
 }

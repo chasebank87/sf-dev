@@ -43,12 +43,12 @@ class UserInteraction {
                 Write-Host ("    [$($i+1)] $($menuOptions[$i])")
             }
             if (-not $isMainMenu) {
-                Write-Host "    [b] Go Back" -ForegroundColor Gray
+                Write-Host "    [b] Go Back" -ForegroundColor Cyan
             }
             if ($isMainMenu) {
-                Write-Host "    [d] Toggle Debug Mode" -ForegroundColor Gray
+                Write-Host "    [d] Toggle Debug Mode" -ForegroundColor DarkYellow
             }
-            Write-Host "    [x] Exit" -ForegroundColor Gray
+            Write-Host "    [x] Exit" -ForegroundColor Red
             Write-Host ""
             $choice = Read-Host 'Enter choice number or special key'
             $logger.LogUserInput($choice, "Menu Choice")
