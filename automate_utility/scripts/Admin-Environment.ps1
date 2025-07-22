@@ -1,5 +1,8 @@
-Import-Module "$PSScriptRoot/../core/EncryptionHelper.psm1" -Force
-Import-Module "$PSScriptRoot/../core/DebugHelper.psm1" -Force
+using module core/AutomationScript.psm1
+using module core/UserInteraction.psm1
+using module core/Logger.psm1
+using module core/DebugHelper.psm1
+using module core/EncryptionHelper.psm1
 
 function Invoke-AdminEnvironment {
     [CmdletBinding()]
@@ -272,5 +275,3 @@ function Invoke-AdminEnvironment {
     Write-Host "[$actionVerb] Environment process complete." -ForegroundColor Green
     Write-Host "Duration: $($duration.ToString('hh\:mm\:ss'))" -ForegroundColor Cyan
 }
-
-Export-ModuleMember -Function Invoke-AdminEnvironment 
