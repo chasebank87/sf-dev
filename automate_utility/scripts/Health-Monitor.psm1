@@ -118,8 +118,9 @@ function Invoke-HealthMonitor {
             $logger.LogInfo("All services are ready! ($readyCount/$totalCount)", "Health Monitor")
         }
         
-        # Display status (clear screen if status changed)
-        if ($statusChanged) {
+        # Display status (clear screen if status changed or first check)
+        if ($statusChanged -or $checkCount -eq 1) {
+            $logger.LogInfo("Displaying health status - Status changed: $statusChanged, Check count: $checkCount", "Health Monitor")
             Clear-Host
             Show-HealthStatus -Services $allServices -CheckCount $checkCount -StartTime $startTime
         }
@@ -189,14 +190,20 @@ function Test-PortConnectivity {
                         $success = $asyncResult.AsyncWaitHandle.WaitOne($TimeoutSeconds * 1000, $false)
                         
                         if ($success) {
-                            $tcpClient.EndConnect($asyncResult)
-                            $logger.LogInfo("Port $p on $Server is accessible", "Health Monitor")
+                            try {
+                                $tcpClient.EndConnect($asyncResult)
+                                $logger.LogInfo("Port $p on $Server is accessible", "Health Monitor")
+                                return $true
+                            } finally {
+                                $tcpClient.Close()
+                            }
+                        } else {
+                            # Timeout occurred
                             $tcpClient.Close()
-                            return $true
                         }
-                        $tcpClient.Close()
                     } catch {
                         # Connection failed - continue to next port
+                        if ($tcpClient) { $tcpClient.Close() }
                     }
                 } else {
                     # Debug mode - just log the command
@@ -219,14 +226,20 @@ function Test-PortConnectivity {
                     $success = $asyncResult.AsyncWaitHandle.WaitOne($TimeoutSeconds * 1000, $false)
                     
                     if ($success) {
-                        $tcpClient.EndConnect($asyncResult)
+                        try {
+                            $tcpClient.EndConnect($asyncResult)
+                            return $true
+                        } finally {
+                            $tcpClient.Close()
+                        }
+                    } else {
+                        # Timeout occurred
                         $tcpClient.Close()
-                        return $true
+                        return $false
                     }
-                    $tcpClient.Close()
-                    return $false
                 } catch {
                     # Connection failed
+                    if ($tcpClient) { $tcpClient.Close() }
                     return $false
                 }
             } else {
