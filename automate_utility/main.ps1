@@ -14,6 +14,7 @@ $ModuleInstaller.InstallRequiredModules(@('psAsciiArt', 'powershell-yaml', 'Writ
 . $PSScriptRoot/scripts/Update-MxlsPasswords.ps1
 . $PSScriptRoot/scripts/Admin-Environment.ps1
 . $PSScriptRoot/scripts/Health-Monitor.ps1
+. $PSScriptRoot/scripts/Update-ServiceAccountServices.ps1
 
 Initialize-ConfigLoader
 Initialize-UserInteraction
@@ -126,7 +127,7 @@ function Show-MainMenu {
 function Show-QuarterlyMenu {
     while ($true) {
         Clear-Host
-        $automation = $UserInteraction.ShowMenu($yamlConfig, 'Quarterly Password Change Automations', @('Update Task Passwords', 'Update MXLS Passwords'), $true, $true)
+        $automation = $UserInteraction.ShowMenu($yamlConfig, 'Quarterly Password Change Automations', @('Update Task Passwords', 'Update MXLS Passwords', 'Update Service Account Services'), $true, $true)
         if ($automation -eq '__BACK__') {
             $logger.LogMenuSelection("Go Back", "Quarterly Menu")
             return
@@ -173,6 +174,36 @@ function Show-QuarterlyMenu {
                 $logger.LogAutomationStart("Update MXLS Passwords")
                 Invoke-UpdateMxlsPasswords -Config $yamlConfig
                 $logger.LogAutomationEnd("Update MXLS Passwords", $true)
+                [UserInteraction]::WriteBlankLine()
+                [UserInteraction]::WriteActivity("Automation completed. What would you like to do?", 'info')
+                $choice = Read-Host "Enter '1' to return to quarterly menu or 'q' to quit"
+                $logger.LogUserInput($choice, "Post-Automation Choice")
+                switch ($choice) {
+                    '1' {
+                        $logger.LogInfo("User chose to return to quarterly menu", "User Action")
+                        [UserInteraction]::WriteActivity("Returning to quarterly menu...", 'info')
+                        Start-Sleep -Seconds 1
+                        continue
+                    }
+                    'q' {
+                        $logger.LogInfo("User chose to quit application", "User Action")
+                        [UserInteraction]::WriteActivity("Exiting application...", 'info')
+                        Start-Sleep -Seconds 1
+                        $logger.CloseSession()
+                        exit
+                    }
+                    default {
+                        $logger.LogWarning("Invalid choice entered: $choice", "User Input")
+                        [UserInteraction]::WriteActivity("Invalid choice. Returning to quarterly menu...", 'warning')
+                        Start-Sleep -Seconds 2
+                        continue
+                    }
+                }
+            }
+            'Update Service Account Services' {
+                $logger.LogAutomationStart("Update Service Account Services")
+                Invoke-UpdateServiceAccountServices -Config $yamlConfig
+                $logger.LogAutomationEnd("Update Service Account Services", $true)
                 [UserInteraction]::WriteBlankLine()
                 [UserInteraction]::WriteActivity("Automation completed. What would you like to do?", 'info')
                 $choice = Read-Host "Enter '1' to return to quarterly menu or 'q' to quit"
