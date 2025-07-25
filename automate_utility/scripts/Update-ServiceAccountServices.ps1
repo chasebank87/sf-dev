@@ -349,6 +349,13 @@ function Update-ServicePasswordsOnAllServers {
                 if ($svc.Name -and $svc.Name -notlike '[ERROR*') {
                     $Logger.LogInfo("Updating password for service $($svc.Name) on $serverName", "Automation")
                     try {
+                        # Debug logging to identify overload issue
+                        $Logger.LogInfo("Session object type: $($sessionInfo.Session.GetType().FullName)", "Debug")
+                        $Logger.LogInfo("Scriptblock type: $($updateServiceScript.GetType().FullName)", "Debug")
+                        $Logger.LogInfo("ArgumentList: $($svc.Name), $ServiceAccount, [PASSWORD]", "Debug")
+                        $Logger.LogInfo("SessionInfo object: $($sessionInfo.GetType().FullName)", "Debug")
+                        $Logger.LogInfo("SessionHelper object: $($SessionHelper.GetType().FullName)", "Debug")
+                        
                         $SessionHelper.ExecuteOnSession($sessionInfo.Session, $updateServiceScript, "Update password for $($svc.Name)", "Custom", @($svc.Name, $ServiceAccount, $NewPassword))
                         $Logger.LogTaskOperation($serverName, $svc.Name, "Service Password Update", $true)
                     } catch {
