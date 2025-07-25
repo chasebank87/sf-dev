@@ -37,12 +37,26 @@ function Invoke-UpdateServiceAccountServices {
     }
 
     [UserInteraction]::WriteActivity("Retrieving services running as $serviceAccount from all servers...", 'info')
-    $allResults = Get-ServicesFromAllServers -SessionInfos $sessionInfos -ServiceAccount $serviceAccount -SessionHelper (Get-SessionHelper)
+    try {
+        $allResults = Get-ServicesFromAllServers -SessionInfos $sessionInfos -ServiceAccount $serviceAccount -SessionHelper (Get-SessionHelper)
+        $logger.LogInfo("Successfully retrieved results from Get-ServicesFromAllServers. Result count: $($allResults.Count)", "Debug")
+        
+        $logger.LogInfo("About to call Display-ServiceSummary", "Debug")
+        Display-ServiceSummary -Results $allResults -UserInteraction $UserInteraction -Logger $logger
+        $logger.LogInfo("Display-ServiceSummary completed successfully", "Debug")
 
-    Display-ServiceSummary -Results $allResults -UserInteraction $UserInteraction -Logger $logger
-
-    if (-not (Confirm-ServicePasswordUpdate -Results $allResults -Logger $logger -UserInteraction $UserInteraction)) {
-        return
+        $logger.LogInfo("About to call Confirm-ServicePasswordUpdate", "Debug")
+        $confirmResult = Confirm-ServicePasswordUpdate -Results $allResults -Logger $logger -UserInteraction $UserInteraction
+        $logger.LogInfo("Confirm-ServicePasswordUpdate returned: $confirmResult", "Debug")
+        
+        if (-not $confirmResult) {
+            $logger.LogInfo("User chose not to proceed with password update", "Debug")
+            return
+        }
+    } catch {
+        $logger.LogError("Error in main process flow: $($_.Exception.Message)", "Debug")
+        $logger.LogError("Stack trace: $($_.ScriptStackTrace)", "Debug")
+        throw
     }
 
     $newPassword = $UserInteraction.ReadVerifiedPassword("Enter the new password for the service account")
@@ -189,14 +203,31 @@ function Display-ServiceSummary {
         [object]$UserInteraction,
         [object]$Logger
     )
+    $Logger.LogInfo("Display-ServiceSummary started. Results count: $($Results.Count)", "Debug")
+    
     [UserInteraction]::WriteBlankLine()
     $totalServices = 0
+    $serverCount = 0
+    
     foreach ($result in $Results) {
+        $serverCount++
+        $Logger.LogInfo("Processing server $serverCount/$($Results.Count): $($result.Server)", "Debug")
+        
         Write-Host "SERVER: $($result.Server)" -ForegroundColor Yellow
         $services = $result.Services
+        
+        $Logger.LogInfo("Server $($result.Server) has $($services.Count if $services else 0) services", "Debug")
+        
         if ($services -and $services.Count -gt 0) {
             $totalServices += $services.Count
-            $UserInteraction.WriteTable($services, @('Name','DisplayName','StartName','State'), @('Service Name','Display Name','Run As Account','Status'), @())
+            $Logger.LogInfo("About to call WriteTable for $($services.Count) services", "Debug")
+            try {
+                $UserInteraction.WriteTable($services, @('Name','DisplayName','StartName','State'), @('Service Name','Display Name','Run As Account','Status'), @())
+                $Logger.LogInfo("WriteTable completed successfully", "Debug")
+            } catch {
+                $Logger.LogError("WriteTable failed: $($_.Exception.Message)", "Debug")
+                throw
+            }
         } else {
             Write-Host "  No services found running as the service account." -ForegroundColor Gray
         }
