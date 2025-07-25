@@ -61,64 +61,68 @@ function Invoke-UpdateServiceAccountServices {
         return
     }
 
-    [UserInteraction]::WriteActivity("Retrieving services running as all service accounts from all servers...", 'info')
-    try {
-        $allResults = Get-ServicesFromAllServers -SessionInfos $sessionInfos -ServiceAccount "" -SessionHelper (Get-SessionHelper)
-        $logger.LogInfo("Successfully retrieved results from Get-ServicesFromAllServers. Result count: $($allResults.Count)", "Debug")
-        
-        $logger.LogInfo("About to call Display-ServiceSummary", "Debug")
-        Display-ServiceSummary -Results $allResults -UserInteraction $UserInteraction -Logger $logger
-        $logger.LogInfo("Display-ServiceSummary completed successfully", "Debug")
-
-        $logger.LogInfo("About to call Confirm-ServicePasswordUpdate", "Debug")
-        $confirmResult = Confirm-ServicePasswordUpdate -Results $allResults -Logger $logger -UserInteraction $UserInteraction
-        $logger.LogInfo("Confirm-ServicePasswordUpdate returned: $confirmResult", "Debug")
-        
-        if (-not $confirmResult) {
-            $logger.LogInfo("User chose not to proceed with password update", "Debug")
-            return
-        }
-    } catch {
-        $logger.LogError("Error in main process flow: $($_.Exception.Message)", "Debug")
-        $logger.LogError("Stack trace: $($_.ScriptStackTrace)", "Debug")
-        throw
+    # 1. Discover all services that match the configured service_account
+    $configuredAccount = $Config.service_account
+    if (-not $configuredAccount) {
+        [UserInteraction]::WriteActivity("Service account not configured in config file!", 'error')
+        $logger.LogError("Service account not configured", "Configuration")
+        return
     }
-
-    # Prompt user to select a service account (after confirmation)
-    $serviceAccount = Select-ServiceAccount -SessionInfos $sessionInfos -SessionHelper (Get-SessionHelper) -UserInteraction $UserInteraction -Logger $logger -Config $Config
-    if (-not $serviceAccount) {
+    [UserInteraction]::WriteActivity("Discovering services matching configured service account '$configuredAccount'...", 'info')
+    $allResults = Get-ServicesFromAllServers -SessionInfos $sessionInfos -ServiceAccount $configuredAccount -SessionHelper (Get-SessionHelper)
+    $logger.LogInfo("Successfully retrieved results from Get-ServicesFromAllServers. Result count: $($allResults.Count)", "Debug")
+    
+    # 2. Aggregate all unique StartName values from those matching services
+    $allAccounts = @()
+    foreach ($result in $allResults) {
+        if ($result.Services) {
+            $allAccounts += $result.Services | ForEach-Object { $_.StartName }
+        }
+    }
+    $uniqueAccounts = $allAccounts | Where-Object { $_ -and $_ -ne '' } | Sort-Object -Unique
+    if ($uniqueAccounts.Count -eq 0) {
+        [UserInteraction]::WriteActivity("No service accounts found in discovered services.", 'warning')
+        $logger.LogWarning("No service accounts found in discovered services", "Service Discovery")
+        return
+    }
+    $logger.LogInfo("Found $($uniqueAccounts.Count) unique service accounts in discovered services.", "Service Discovery")
+    
+    # 3. Prompt the user to select which service account to use for the update
+    $selectedAccount = $UserInteraction.ShowMenu($Config, "Select the service account to update:", $uniqueAccounts)
+    if (-not $selectedAccount) {
         [UserInteraction]::WriteActivity("No service account selected. Exiting.", 'warning')
         $logger.LogWarning("No service account selected", "User Action")
         return
     }
-
-    [UserInteraction]::WriteActivity("Retrieving services running as $serviceAccount from all servers...", 'info')
-    try {
-        $allResults = Get-ServicesFromAllServers -SessionInfos $sessionInfos -ServiceAccount $serviceAccount -SessionHelper (Get-SessionHelper)
-        $logger.LogInfo("Successfully retrieved results from Get-ServicesFromAllServers. Result count: $($allResults.Count)", "Debug")
-        
-        $logger.LogInfo("About to call Display-ServiceSummary", "Debug")
-        Display-ServiceSummary -Results $allResults -UserInteraction $UserInteraction -Logger $logger
-        $logger.LogInfo("Display-ServiceSummary completed successfully", "Debug")
-
-        $logger.LogInfo("About to call Confirm-ServicePasswordUpdate", "Debug")
-        $confirmResult = Confirm-ServicePasswordUpdate -Results $allResults -Logger $logger -UserInteraction $UserInteraction
-        $logger.LogInfo("Confirm-ServicePasswordUpdate returned: $confirmResult", "Debug")
-        
-        if (-not $confirmResult) {
-            $logger.LogInfo("User chose not to proceed with password update", "Debug")
-            return
+    [UserInteraction]::WriteActivity("You selected: $selectedAccount", 'info')
+    
+    # 4. Filter the services to only those with the selected account
+    $filteredResults = @()
+    foreach ($result in $allResults) {
+        $filteredServices = $result.Services | Where-Object { $_.StartName -eq $selectedAccount }
+        $filteredResults += [PSCustomObject]@{
+            Server = $result.Server
+            Services = $filteredServices
         }
-    } catch {
-        $logger.LogError("Error in main process flow: $($_.Exception.Message)", "Debug")
-        $logger.LogError("Stack trace: $($_.ScriptStackTrace)", "Debug")
-        throw
+    }
+    
+    $logger.LogInfo("About to call Display-ServiceSummary", "Debug")
+    Display-ServiceSummary -Results $filteredResults -UserInteraction $UserInteraction -Logger $logger
+    $logger.LogInfo("Display-ServiceSummary completed successfully", "Debug")
+
+    $logger.LogInfo("About to call Confirm-ServicePasswordUpdate", "Debug")
+    $confirmResult = Confirm-ServicePasswordUpdate -Results $filteredResults -Logger $logger -UserInteraction $UserInteraction
+    $logger.LogInfo("Confirm-ServicePasswordUpdate returned: $confirmResult", "Debug")
+    
+    if (-not $confirmResult) {
+        $logger.LogInfo("User chose not to proceed with password update", "Debug")
+        return
     }
 
     $newPassword = $UserInteraction.ReadVerifiedPassword("Enter the new password for the service account")
     $logger.LogUserInput("[PASSWORD ENTERED]", "New Password Input")
 
-    Update-ServicePasswordsOnAllServers -SessionInfos $sessionInfos -Results $allResults -ServiceAccount $serviceAccount -NewPassword $newPassword -SessionHelper (Get-SessionHelper) -UserInteraction $UserInteraction -Logger $logger
+    Update-ServicePasswordsOnAllServers -SessionInfos $sessionInfos -Results $filteredResults -ServiceAccount $selectedAccount -NewPassword $newPassword -SessionHelper (Get-SessionHelper) -UserInteraction $UserInteraction -Logger $logger
 
     $logger.LogInfo("Service password update process completed", "Automation")
 }
