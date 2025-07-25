@@ -63,6 +63,9 @@ function Get-ServicesFromAllServers {
     $getServicesScript = {
         param($serviceAccount)
         
+        # Debug: Log what we're searching for
+        Write-Host "DEBUG: Searching for service account: '$serviceAccount' on $env:COMPUTERNAME" -ForegroundColor Yellow
+        
         # Helper function to normalize service account names for comparison
         function Compare-ServiceAccount {
             param($storedName, $searchAccount)
@@ -74,7 +77,10 @@ function Get-ServicesFromAllServers {
             $searchAccount = $searchAccount.ToLower()
             
             # Direct match
-            if ($storedName -eq $searchAccount) { return $true }
+            if ($storedName -eq $searchAccount) { 
+                Write-Host "DEBUG: Direct match found - '$storedName'" -ForegroundColor Green
+                return $true 
+            }
             
             # Extract username from different formats
             $storedUser = $storedName
@@ -89,13 +95,26 @@ function Get-ServicesFromAllServers {
             if ($searchAccount -match '^(.+)@(.+)$') { $searchUser = $matches[1] }
             
             # Compare just the usernames
-            return ($storedUser -eq $searchUser)
+            if ($storedUser -eq $searchUser) {
+                Write-Host "DEBUG: Username match found - stored:'$storedName' -> user:'$storedUser', search:'$searchAccount' -> user:'$searchUser'" -ForegroundColor Green
+                return $true
+            }
+            
+            return $false
         }
         
         # Use Get-CimInstance to get service information
         $foundServices = @()
-        Get-CimInstance -ClassName Win32_Service | ForEach-Object {
-            if (Compare-ServiceAccount -storedName $_.StartName -searchAccount $serviceAccount) {
+        $allServices = Get-CimInstance -ClassName Win32_Service
+        Write-Host "DEBUG: Found $($allServices.Count) total services" -ForegroundColor Yellow
+        
+        $allServices | ForEach-Object {
+            $serviceName = $_.Name
+            $startName = $_.StartName
+            Write-Host "DEBUG: Checking service '$serviceName' with StartName '$startName'" -ForegroundColor Cyan
+            
+            if (Compare-ServiceAccount -storedName $startName -searchAccount $serviceAccount) {
+                Write-Host "DEBUG: MATCH! Adding service '$serviceName'" -ForegroundColor Green
                 $foundServices += [PSCustomObject]@{
                     Name = $_.Name
                     DisplayName = $_.DisplayName
@@ -104,6 +123,8 @@ function Get-ServicesFromAllServers {
                 }
             }
         }
+        
+        Write-Host "DEBUG: Found $($foundServices.Count) matching services" -ForegroundColor Yellow
         
         # Return the services array, or empty array if none found
         return $foundServices
