@@ -63,12 +63,13 @@ function Get-ServicesFromAllServers {
     $getServicesScript = {
         param($serviceAccount)
         
-        # Debug: Log what we're searching for
-        Write-Host "DEBUG: Searching for service account: '$serviceAccount' on $env:COMPUTERNAME" -ForegroundColor Yellow
+        # Create a debug log that will be returned with results
+        $debugLog = @()
+        $debugLog += "Searching for service account: '$serviceAccount' on $env:COMPUTERNAME"
         
         # Helper function to normalize service account names for comparison
         function Compare-ServiceAccount {
-            param($storedName, $searchAccount)
+            param($storedName, $searchAccount, $debugLogRef)
             
             if (-not $storedName -or -not $searchAccount) { return $false }
             
@@ -78,7 +79,7 @@ function Get-ServicesFromAllServers {
             
             # Direct match
             if ($storedName -eq $searchAccount) { 
-                Write-Host "DEBUG: Direct match found - '$storedName'" -ForegroundColor Green
+                $debugLogRef.Value += "DIRECT MATCH: '$storedName'"
                 return $true 
             }
             
@@ -96,38 +97,59 @@ function Get-ServicesFromAllServers {
             
             # Compare just the usernames
             if ($storedUser -eq $searchUser) {
-                Write-Host "DEBUG: Username match found - stored:'$storedName' -> user:'$storedUser', search:'$searchAccount' -> user:'$searchUser'" -ForegroundColor Green
+                $debugLogRef.Value += "USERNAME MATCH: stored='$storedName' -> user='$storedUser', search='$searchAccount' -> user='$searchUser'"
                 return $true
             }
             
             return $false
         }
         
-        # Use Get-CimInstance to get service information
-        $foundServices = @()
-        $allServices = Get-CimInstance -ClassName Win32_Service
-        Write-Host "DEBUG: Found $($allServices.Count) total services" -ForegroundColor Yellow
-        
-        $allServices | ForEach-Object {
-            $serviceName = $_.Name
-            $startName = $_.StartName
-            Write-Host "DEBUG: Checking service '$serviceName' with StartName '$startName'" -ForegroundColor Cyan
+        try {
+            # Use Get-CimInstance to get service information
+            $foundServices = @()
+            $allServices = Get-CimInstance -ClassName Win32_Service
+            $debugLog += "Found $($allServices.Count) total services"
             
-            if (Compare-ServiceAccount -storedName $startName -searchAccount $serviceAccount) {
-                Write-Host "DEBUG: MATCH! Adding service '$serviceName'" -ForegroundColor Green
-                $foundServices += [PSCustomObject]@{
-                    Name = $_.Name
-                    DisplayName = $_.DisplayName
-                    StartName = $_.StartName
-                    State = $_.State
+            $matchCount = 0
+            $allServices | ForEach-Object {
+                $serviceName = $_.Name
+                $startName = $_.StartName
+                
+                # Only log first 5 services to avoid spam, then log matches
+                if ($matchCount -lt 5) {
+                    $debugLog += "Checking service '$serviceName' with StartName '$startName'"
+                }
+                
+                $debugLogRef = [ref]$debugLog
+                if (Compare-ServiceAccount -storedName $startName -searchAccount $serviceAccount -debugLogRef $debugLogRef) {
+                    $matchCount++
+                    $debugLog += "MATCH #$matchCount: Adding service '$serviceName'"
+                    $foundServices += [PSCustomObject]@{
+                        Name = $_.Name
+                        DisplayName = $_.DisplayName
+                        StartName = $_.StartName
+                        State = $_.State
+                    }
                 }
             }
+            
+            $debugLog += "Found $($foundServices.Count) matching services"
+            
+            # Return both the services and debug info
+            return [PSCustomObject]@{
+                Services = $foundServices
+                DebugLog = $debugLog
+                Success = $true
+                Error = $null
+            }
+        } catch {
+            return [PSCustomObject]@{
+                Services = @()
+                DebugLog = $debugLog + @("ERROR: $($_.Exception.Message)")
+                Success = $false
+                Error = $_.Exception.Message
+            }
         }
-        
-        Write-Host "DEBUG: Found $($foundServices.Count) matching services" -ForegroundColor Yellow
-        
-        # Return the services array, or empty array if none found
-        return $foundServices
     }
     $results = $SessionHelper.ExecuteOnMultipleSessions($SessionInfos, $getServicesScript, "Retrieve services running as $ServiceAccount", @($ServiceAccount))
     foreach ($sessionInfo in $SessionInfos) {
@@ -135,12 +157,24 @@ function Get-ServicesFromAllServers {
         $serverInfo = $sessionInfo.ServerInfo
         $result = $results[$serverName]
         if ($result.Success) {
-            $services = $result.Result
+            $scriptResult = $result.Result
+            
+            # Log debug information
+            if ($scriptResult.DebugLog) {
+                $logger.LogInfo("=== DEBUG INFO for $serverName ===", "Service Discovery")
+                foreach ($debugLine in $scriptResult.DebugLog) {
+                    $logger.LogInfo("  $debugLine", "Service Discovery")
+                }
+                $logger.LogInfo("=== END DEBUG INFO for $serverName ===", "Service Discovery")
+            }
+            
+            $services = $scriptResult.Services
             $allResults += [PSCustomObject]@{
                 Server = "$serverName ($($serverInfo.Address))"
                 Services = $services
             }
         } else {
+            $logger.LogError("Failed to retrieve services from $serverName`: $($result.Error)", "Service Discovery")
             $allResults += [PSCustomObject]@{
                 Server = "$serverName ($($serverInfo.Address))"
                 Services = @([PSCustomObject]@{ Name = "[ERROR: $($result.Error)]"; DisplayName = ""; StartName = ""; State = "" })
