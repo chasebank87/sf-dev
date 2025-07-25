@@ -349,7 +349,7 @@ function Update-ServicePasswordsOnAllServers {
                 if ($svc.Name -and $svc.Name -notlike '[ERROR*') {
                     $Logger.LogInfo("Updating password for service $($svc.Name) on $serverName", "Automation")
                     try {
-                        $SessionHelper.ExecuteOnSession($sessionInfo.Session, $updateServiceScript, "Update password for $($svc.Name)", @($svc.Name, $ServiceAccount, $NewPassword))
+                        $SessionHelper.ExecuteOnSession($sessionInfo.Session, $updateServiceScript, "Update password for $($svc.Name)", "Custom", @($svc.Name, $ServiceAccount, $NewPassword))
                         $Logger.LogTaskOperation($serverName, $svc.Name, "Service Password Update", $true)
                     } catch {
                         $Logger.LogTaskOperation($serverName, $svc.Name, "Service Password Update", $false)
