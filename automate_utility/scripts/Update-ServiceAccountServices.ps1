@@ -88,7 +88,23 @@ function Invoke-UpdateServiceAccountServices {
     $logger.LogInfo("Found $($uniqueAccounts.Count) unique service accounts in discovered services.", "Service Discovery")
     
     # 3. Prompt the user to select which service account to use for the update
-    $selectedAccount = $UserInteraction.ShowMenu($Config, "Select the service account to update:", $uniqueAccounts)
+    # (Moved to after confirmation)
+    
+    $logger.LogInfo("About to call Display-ServiceSummary", "Debug")
+    Display-ServiceSummary -Results $allResults -UserInteraction $UserInteraction -Logger $logger
+    $logger.LogInfo("Display-ServiceSummary completed successfully", "Debug")
+
+    $logger.LogInfo("About to call Confirm-ServicePasswordUpdate", "Debug")
+    $confirmResult = Confirm-ServicePasswordUpdate -Results $allResults -Logger $logger -UserInteraction $UserInteraction
+    $logger.LogInfo("Confirm-ServicePasswordUpdate returned: $confirmResult", "Debug")
+    
+    if (-not $confirmResult) {
+        $logger.LogInfo("User chose not to proceed with password update", "Debug")
+        return
+    }
+
+    # Now prompt the user to select a service account (after confirmation)
+    $selectedAccount = Show-Menu -Config $Config -Title "Select the service account to update:" -Options $uniqueAccounts
     if (-not $selectedAccount) {
         [UserInteraction]::WriteActivity("No service account selected. Exiting.", 'warning')
         $logger.LogWarning("No service account selected", "User Action")
@@ -109,15 +125,6 @@ function Invoke-UpdateServiceAccountServices {
     $logger.LogInfo("About to call Display-ServiceSummary", "Debug")
     Display-ServiceSummary -Results $filteredResults -UserInteraction $UserInteraction -Logger $logger
     $logger.LogInfo("Display-ServiceSummary completed successfully", "Debug")
-
-    $logger.LogInfo("About to call Confirm-ServicePasswordUpdate", "Debug")
-    $confirmResult = Confirm-ServicePasswordUpdate -Results $filteredResults -Logger $logger -UserInteraction $UserInteraction
-    $logger.LogInfo("Confirm-ServicePasswordUpdate returned: $confirmResult", "Debug")
-    
-    if (-not $confirmResult) {
-        $logger.LogInfo("User chose not to proceed with password update", "Debug")
-        return
-    }
 
     $newPassword = $UserInteraction.ReadVerifiedPassword("Enter the new password for the service account")
     $logger.LogUserInput("[PASSWORD ENTERED]", "New Password Input")
