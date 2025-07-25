@@ -268,8 +268,8 @@ class UserInteraction {
     [string] PromptUserForConfirmation([string]$Message) {
         do {
             $response = Read-Host "$Message (y/n)"
-            if ($response -match '^(y|yes)$') { return $true }
-            if ($response -match '^(n|no)$') { return $false }
+            if ($response -match '^(y|yes)$') { return 'y' }
+            if ($response -match '^(n|no)$') { return 'n' }
             Write-Host "Please enter 'y' for yes or 'n' for no." -ForegroundColor Yellow
         } while ($true)
     }
