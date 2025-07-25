@@ -144,11 +144,12 @@ function Get-ServicesFromAllServers {
             if (-not $storedName -or -not $searchAccount) { return $false }
             
             # Convert both to lowercase for comparison
-            $storedName = $storedName.ToLower()
-            $searchAccount = $searchAccount.ToLower()
+            $storedName = $storedName.ToLower().Trim()
+            $searchAccount = $searchAccount.ToLower().Trim()
             
             # Direct match
             if ($storedName -eq $searchAccount) { 
+                $debugLog += "[MATCH: direct] '$storedName' == '$searchAccount'"
                 return $true 
             }
             
@@ -166,9 +167,16 @@ function Get-ServicesFromAllServers {
             
             # Compare just the usernames
             if ($storedUser -eq $searchUser) {
+                $debugLog += "[MATCH: username] '$storedUser' == '$searchUser' from '$storedName' and '$searchAccount'"
                 return $true
             }
             
+            # Fallback substring match
+            if ($storedName -like "*$searchAccount*") {
+                $debugLog += "[MATCH: substring] '$storedName' -like '*$searchAccount*'"
+                return $true
+            }
+            $debugLog += "[NO MATCH] '$storedName' vs '$searchAccount' (user: '$storedUser' vs '$searchUser')"
             return $false
         }
         
@@ -186,11 +194,15 @@ function Get-ServicesFromAllServers {
                 $checkedCount++
                 
                 # Only log first 5 services to avoid spam
-                if ($checkedCount -le 5) {
+                if ($checkedCount -le 10) {
                     $debugLog += "Checking service '$serviceName' with StartName '$startName'"
                 }
                 
-                if (Compare-ServiceAccount -storedName $startName -searchAccount $serviceAccount) {
+                $match = Compare-ServiceAccount -storedName $startName -searchAccount $serviceAccount
+                if ($checkedCount -le 10) {
+                    $debugLog += "Result: $match"
+                }
+                if ($match) {
                     $matchCount++
                     $debugLog += "MATCH #${matchCount}: Adding service '$serviceName' (StartName: '$startName')"
                     $foundServices += [PSCustomObject]@{
