@@ -9,7 +9,8 @@ function Select-ServiceAccount {
         [object[]]$SessionInfos,
         [object]$SessionHelper,
         [object]$UserInteraction,
-        [object]$Logger
+        [object]$Logger,
+        [object]$Config
     )
     $getAccountsScript = {
         # Get all unique StartName values from services
@@ -31,7 +32,7 @@ function Select-ServiceAccount {
         return $null
     }
     $Logger.LogInfo("Found $($uniqueAccounts.Count) unique service accounts.", "Service Discovery")
-    $selected = $UserInteraction.ShowMenu($uniqueAccounts, "Select the service account to update:")
+    $selected = $UserInteraction.ShowMenu($Config, "Select the service account to update:", $uniqueAccounts)
     return $selected
 }
 
@@ -60,8 +61,31 @@ function Invoke-UpdateServiceAccountServices {
         return
     }
 
-    # Prompt user to select a service account
-    $serviceAccount = Select-ServiceAccount -SessionInfos $sessionInfos -SessionHelper (Get-SessionHelper) -UserInteraction $UserInteraction -Logger $logger
+    [UserInteraction]::WriteActivity("Retrieving services running as all service accounts from all servers...", 'info')
+    try {
+        $allResults = Get-ServicesFromAllServers -SessionInfos $sessionInfos -ServiceAccount "" -SessionHelper (Get-SessionHelper)
+        $logger.LogInfo("Successfully retrieved results from Get-ServicesFromAllServers. Result count: $($allResults.Count)", "Debug")
+        
+        $logger.LogInfo("About to call Display-ServiceSummary", "Debug")
+        Display-ServiceSummary -Results $allResults -UserInteraction $UserInteraction -Logger $logger
+        $logger.LogInfo("Display-ServiceSummary completed successfully", "Debug")
+
+        $logger.LogInfo("About to call Confirm-ServicePasswordUpdate", "Debug")
+        $confirmResult = Confirm-ServicePasswordUpdate -Results $allResults -Logger $logger -UserInteraction $UserInteraction
+        $logger.LogInfo("Confirm-ServicePasswordUpdate returned: $confirmResult", "Debug")
+        
+        if (-not $confirmResult) {
+            $logger.LogInfo("User chose not to proceed with password update", "Debug")
+            return
+        }
+    } catch {
+        $logger.LogError("Error in main process flow: $($_.Exception.Message)", "Debug")
+        $logger.LogError("Stack trace: $($_.ScriptStackTrace)", "Debug")
+        throw
+    }
+
+    # Prompt user to select a service account (after confirmation)
+    $serviceAccount = Select-ServiceAccount -SessionInfos $sessionInfos -SessionHelper (Get-SessionHelper) -UserInteraction $UserInteraction -Logger $logger -Config $Config
     if (-not $serviceAccount) {
         [UserInteraction]::WriteActivity("No service account selected. Exiting.", 'warning')
         $logger.LogWarning("No service account selected", "User Action")
