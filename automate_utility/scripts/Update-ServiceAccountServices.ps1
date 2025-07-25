@@ -62,16 +62,45 @@ function Get-ServicesFromAllServers {
     $allResults = @()
     $getServicesScript = {
         param($serviceAccount)
-        # Use Get-Service with WMI lookup for service account info
+        
+        # Helper function to normalize service account names for comparison
+        function Compare-ServiceAccount {
+            param($storedName, $searchAccount)
+            
+            if (-not $storedName -or -not $searchAccount) { return $false }
+            
+            # Convert both to lowercase for comparison
+            $storedName = $storedName.ToLower()
+            $searchAccount = $searchAccount.ToLower()
+            
+            # Direct match
+            if ($storedName -eq $searchAccount) { return $true }
+            
+            # Extract username from different formats
+            $storedUser = $storedName
+            $searchUser = $searchAccount
+            
+            # Handle domain\username format
+            if ($storedName -match '^(.+)\\(.+)$') { $storedUser = $matches[2] }
+            if ($searchAccount -match '^(.+)\\(.+)$') { $searchUser = $matches[2] }
+            
+            # Handle username@domain format  
+            if ($storedName -match '^(.+)@(.+)$') { $storedUser = $matches[1] }
+            if ($searchAccount -match '^(.+)@(.+)$') { $searchUser = $matches[1] }
+            
+            # Compare just the usernames
+            return ($storedUser -eq $searchUser)
+        }
+        
+        # Use Get-CimInstance to get service information
         $foundServices = @()
-        Get-Service | ForEach-Object {
-            $service = Get-WmiObject Win32_Service -Filter "Name='$($_.Name)'"
-            if ($service.StartName -eq $serviceAccount) {
+        Get-CimInstance -ClassName Win32_Service | ForEach-Object {
+            if (Compare-ServiceAccount -storedName $_.StartName -searchAccount $serviceAccount) {
                 $foundServices += [PSCustomObject]@{
                     Name = $_.Name
                     DisplayName = $_.DisplayName
-                    StartName = $service.StartName
-                    State = $_.Status
+                    StartName = $_.StartName
+                    State = $_.State
                 }
             }
         }
