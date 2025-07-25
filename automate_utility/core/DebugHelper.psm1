@@ -227,12 +227,8 @@ class DebugHelper {
 
     [object]InvokeOrDebug([object]$Session, [scriptblock]$ScriptBlock, [string]$Description, [string]$CommandType, [object[]]$ArgumentList = @()) {
         if ($this.ShouldExecuteCommand($CommandType)) {
-            # Execute the command
-            if ($ArgumentList.Count -gt 0) {
-                return Invoke-Command -Session $Session -ScriptBlock $ScriptBlock -ArgumentList $ArgumentList
-            } else {
-                return Invoke-Command -Session $Session -ScriptBlock $ScriptBlock
-            }
+            # Execute the command - always use -ArgumentList to avoid parameter issues
+            return Invoke-Command -Session $Session -ScriptBlock $ScriptBlock -ArgumentList $ArgumentList
         } else {
             # Log what would have been executed
             $commandString = $ScriptBlock.ToString()
