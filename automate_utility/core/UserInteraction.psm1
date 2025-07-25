@@ -387,4 +387,44 @@ function Write-InlineProgressBar {
     [UserInteraction]::WriteInlineProgressBar($Current, $Total, $Label, $BarWidth)
 }
 
+function Simple-Menu {
+    param(
+        [string]$Title,
+        [string[]]$Options
+    )
+    while ($true) {
+        Write-Host ""
+        Write-Host $Title -ForegroundColor Cyan
+        for ($i = 0; $i -lt $Options.Length; $i++) {
+            Write-Host ("    [$($i+1)] $($Options[$i])")
+        }
+        Write-Host "    [x] Cancel" -ForegroundColor Red
+        Write-Host ""
+        $choice = Read-Host 'Enter choice number or x to cancel'
+        $choice = $choice.ToLower().Trim()
+        if ($choice -eq 'x') {
+            return $null
+        }
+        if ([string]::IsNullOrWhiteSpace($choice)) {
+            Write-Host "No option selected. Please enter a valid choice number or 'x'." -ForegroundColor Yellow
+            Start-Sleep -Seconds 1
+            continue
+        }
+        $selectedOption = if ($choice -as [int] -and $choice -ge 1 -and $choice -le $Options.Length) { $Options[$choice-1] } else { $null }
+        if ($selectedOption) {
+            $confirm = Read-Host "You selected '$selectedOption'. Confirm? (y/n)"
+            if ($confirm -eq 'y') {
+                return $selectedOption
+            } else {
+                Write-Host "Selection not confirmed. Please choose again." -ForegroundColor Yellow
+            }
+        } else {
+            Write-Host "Invalid choice '$choice'. Please enter a number between 1 and $($Options.Length) or 'x'." -ForegroundColor Yellow
+            Start-Sleep -Seconds 1
+            continue
+        }
+    }
+    return $null # Default return to satisfy linter
+}
+
 Export-ModuleMember -Function Initialize-UserInteraction, Get-UserInteraction, Show-Menu, Write-Activity, Write-Table, Write-BlankLine, Read-VerifiedPassword, Initialize-ProgressBar, Update-ProgressBar, Complete-ProgressBar, Write-InlineProgressBar
