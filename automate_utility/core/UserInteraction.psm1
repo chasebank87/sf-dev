@@ -427,4 +427,4 @@ function Simple-Menu {
     return $null # Default return to satisfy linter
 }
 
-Export-ModuleMember -Function Initialize-UserInteraction, Get-UserInteraction, Show-Menu, Write-Activity, Write-Table, Write-BlankLine, Read-VerifiedPassword, Initialize-ProgressBar, Update-ProgressBar, Complete-ProgressBar, Write-InlineProgressBar
+Export-ModuleMember -Function Initialize-UserInteraction, Get-UserInteraction, Show-Menu, Write-Activity, Write-Table, Write-BlankLine, Read-VerifiedPassword, Initialize-ProgressBar, Update-ProgressBar, Complete-ProgressBar, Write-InlineProgressBar, Simple-Menu
