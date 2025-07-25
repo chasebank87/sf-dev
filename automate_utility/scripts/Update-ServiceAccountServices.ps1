@@ -66,6 +66,7 @@ function Get-ServicesFromAllServers {
         Get-CimInstance Win32_Service | Where-Object { $_.StartName -eq $serviceAccount } |
             Select-Object Name, DisplayName, StartName, State
     }
+    $logger.LogInfo("About to execute with ServiceAccount: '$ServiceAccount'", "Automation")
     $results = $SessionHelper.ExecuteOnMultipleSessions($SessionInfos, $getServicesScript, "Retrieve services running as $ServiceAccount", @($ServiceAccount))
     foreach ($sessionInfo in $SessionInfos) {
         $serverName = $sessionInfo.ServerName

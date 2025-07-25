@@ -226,9 +226,24 @@ class DebugHelper {
     }
 
     [object]InvokeOrDebug([object]$Session, [scriptblock]$ScriptBlock, [string]$Description, [string]$CommandType, [object[]]$ArgumentList = @()) {
+        $logger = Get-Logger
         if ($this.ShouldExecuteCommand($CommandType)) {
             # Execute the command - always use -ArgumentList to avoid parameter issues
-            return Invoke-Command -Session $Session -ScriptBlock $ScriptBlock -ArgumentList $ArgumentList
+            $logger.LogInfo("About to execute Invoke-Command with ArgumentList count: $($ArgumentList.Count)", "Debug Command")
+            if ($ArgumentList.Count -gt 0) {
+                $logger.LogInfo("ArgumentList contents: $($ArgumentList -join ', ')", "Debug Command")
+            }
+            try {
+                if ($ArgumentList.Count -eq 0) {
+                    # Use simpler call when no arguments
+                    return Invoke-Command -Session $Session -ScriptBlock $ScriptBlock
+                } else {
+                    return Invoke-Command -Session $Session -ScriptBlock $ScriptBlock -ArgumentList $ArgumentList
+                }
+            } catch {
+                $logger.LogError("Invoke-Command failed: $($_.Exception.Message)", "Debug Command")
+                throw
+            }
         } else {
             # Log what would have been executed
             $commandString = $ScriptBlock.ToString()
