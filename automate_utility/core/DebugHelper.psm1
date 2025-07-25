@@ -110,7 +110,6 @@ class DebugHelper {
     [string]AnalyzeScriptBlockForCommandType([scriptblock]$ScriptBlock) {
         $logger = Get-Logger
         $scriptText = $ScriptBlock.ToString()
-        $logger.LogInfo("Analyzing script block: $scriptText", "Security Analysis")
         
         # First, check for potentially unsafe operations - this takes precedence
         $unsafePatterns = @(
@@ -206,7 +205,14 @@ class DebugHelper {
                     return "UnsafeOperation"
                 }
             }
-            return "Get-Service"  # Return a safe command type that's whitelisted
+            
+            # Return the actual safe command found
+            foreach ($safeCommand in $safeCommands) {
+                if ($scriptText -match "\b$safeCommand\b") {
+                    return $safeCommand  # Return the actual command that was found
+                }
+            }
+            return "Get-Service"  # Fallback, though this shouldn't happen
         }
         
         # Default to Custom for unknown operations
@@ -229,10 +235,7 @@ class DebugHelper {
         $logger = Get-Logger
         if ($this.ShouldExecuteCommand($CommandType)) {
             # Execute the command - always use -ArgumentList to avoid parameter issues
-            $logger.LogInfo("About to execute Invoke-Command with ArgumentList count: $($ArgumentList.Count)", "Debug Command")
-            if ($ArgumentList.Count -gt 0) {
-                $logger.LogInfo("ArgumentList contents: $($ArgumentList -join ', ')", "Debug Command")
-            }
+
             try {
                 if ($ArgumentList.Count -eq 0) {
                     # Use simpler call when no arguments

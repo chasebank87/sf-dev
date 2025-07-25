@@ -253,9 +253,7 @@ class SessionHelper {
             
             # Use DebugHelper to analyze script block for security (proper separation of concerns)
             $debugHelper = $this.GetDebugHelper()
-            $this.Logger.LogInfo("DebugHelper retrieved successfully", "Session Execution")
             $commandType = $debugHelper.AnalyzeScriptBlockForCommandType($ScriptBlock)
-            $this.Logger.LogInfo("Command type determined: $commandType", "Session Execution")
             
             # Always pass ArgumentList, even if empty, to avoid overload issues
             return $debugHelper.InvokeOrDebug($Session, $ScriptBlock, $Description, $commandType, $ArgumentList)
