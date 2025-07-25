@@ -4,6 +4,37 @@ using module core/Logger.psm1
 using module core/DebugHelper.psm1
 using module core/SessionHelper.psm1
 
+function Select-ServiceAccount {
+    param(
+        [object[]]$SessionInfos,
+        [object]$SessionHelper,
+        [object]$UserInteraction,
+        [object]$Logger
+    )
+    $getAccountsScript = {
+        # Get all unique StartName values from services
+        Get-CimInstance -ClassName Win32_Service | Select-Object -ExpandProperty StartName | Where-Object { $_ -and $_ -ne '' } | Sort-Object -Unique
+    }
+    $Logger.LogInfo("Querying all servers for unique service accounts...", "Service Discovery")
+    $results = $SessionHelper.ExecuteOnMultipleSessions($SessionInfos, $getAccountsScript, "Retrieve unique service accounts")
+    $allAccounts = @()
+    foreach ($server in $results.Keys) {
+        $result = $results[$server]
+        if ($result.Success -and $result.Result) {
+            $allAccounts += $result.Result
+        }
+    }
+    $uniqueAccounts = $allAccounts | Where-Object { $_ -and $_ -ne '' } | Sort-Object -Unique
+    if ($uniqueAccounts.Count -eq 0) {
+        $UserInteraction.WriteActivity("No service accounts found on any server.", 'warning')
+        $Logger.LogWarning("No service accounts found on any server", "Service Discovery")
+        return $null
+    }
+    $Logger.LogInfo("Found $($uniqueAccounts.Count) unique service accounts.", "Service Discovery")
+    $selected = $UserInteraction.ShowMenu($uniqueAccounts, "Select the service account to update:")
+    return $selected
+}
+
 function Invoke-UpdateServiceAccountServices {
     param([object]$Config)
     $logger = Get-Logger
@@ -13,13 +44,6 @@ function Invoke-UpdateServiceAccountServices {
     [UserInteraction]::WriteBlankLine()
     [UserInteraction]::WriteActivity("Starting Service Account Service Password Change process...", 'info')
     $logger.LogInfo("Starting Service Account Service Password Change process", "Automation")
-
-    $serviceAccount = $Config.service_account
-    if (-not $serviceAccount) {
-        [UserInteraction]::WriteActivity("Service account not configured in config file!", 'error')
-        $logger.LogError("Service account not configured", "Configuration")
-        return
-    }
 
     $serverNames = (Get-SessionHelper).GetAllServerNames()
     if ($serverNames.Count -eq 0) {
@@ -36,34 +60,41 @@ function Invoke-UpdateServiceAccountServices {
         return
     }
 
+    # Prompt user to select a service account
+    $serviceAccount = Select-ServiceAccount -SessionInfos $sessionInfos -SessionHelper (Get-SessionHelper) -UserInteraction $UserInteraction -Logger $logger
+    if (-not $serviceAccount) {
+        [UserInteraction]::WriteActivity("No service account selected. Exiting.", 'warning')
+        $logger.LogWarning("No service account selected", "User Action")
+        return
+    }
+
     [UserInteraction]::WriteActivity("Retrieving services running as $serviceAccount from all servers...", 'info')
     try {
         $allResults = Get-ServicesFromAllServers -SessionInfos $sessionInfos -ServiceAccount $serviceAccount -SessionHelper (Get-SessionHelper)
+        $logger.LogInfo("Successfully retrieved results from Get-ServicesFromAllServers. Result count: $($allResults.Count)", "Debug")
         
+        $logger.LogInfo("About to call Display-ServiceSummary", "Debug")
         Display-ServiceSummary -Results $allResults -UserInteraction $UserInteraction -Logger $logger
+        $logger.LogInfo("Display-ServiceSummary completed successfully", "Debug")
 
+        $logger.LogInfo("About to call Confirm-ServicePasswordUpdate", "Debug")
         $confirmResult = Confirm-ServicePasswordUpdate -Results $allResults -Logger $logger -UserInteraction $UserInteraction
+        $logger.LogInfo("Confirm-ServicePasswordUpdate returned: $confirmResult", "Debug")
         
         if (-not $confirmResult) {
+            $logger.LogInfo("User chose not to proceed with password update", "Debug")
             return
         }
-        
-        # Get unique service accounts and let user select which one to update
-        $selectedServiceAccount = Select-ServiceAccountForUpdate -Results $allResults -UserInteraction $UserInteraction -Logger $logger
-        if (-not $selectedServiceAccount) {
-            return
-        }
-        
     } catch {
         $logger.LogError("Error in main process flow: $($_.Exception.Message)", "Debug")
         $logger.LogError("Stack trace: $($_.ScriptStackTrace)", "Debug")
         throw
     }
 
-    $newPassword = $UserInteraction.ReadVerifiedPassword("Enter the new password for service account '$selectedServiceAccount'")
+    $newPassword = $UserInteraction.ReadVerifiedPassword("Enter the new password for the service account")
     $logger.LogUserInput("[PASSWORD ENTERED]", "New Password Input")
 
-    Update-ServicePasswordsOnAllServers -SessionInfos $sessionInfos -Results $allResults -ServiceAccount $selectedServiceAccount -NewPassword $newPassword -SessionHelper (Get-SessionHelper) -UserInteraction $UserInteraction -Logger $logger
+    Update-ServicePasswordsOnAllServers -SessionInfos $sessionInfos -Results $allResults -ServiceAccount $serviceAccount -NewPassword $newPassword -SessionHelper (Get-SessionHelper) -UserInteraction $UserInteraction -Logger $logger
 
     $logger.LogInfo("Service password update process completed", "Automation")
 }
@@ -78,8 +109,9 @@ function Get-ServicesFromAllServers {
     $getServicesScript = {
         param($serviceAccount)
         
-        # Create a simple debug log for any issues
+        # Create a debug log that will be returned with results
         $debugLog = @()
+        $debugLog += "Searching for service account: '$serviceAccount' on $env:COMPUTERNAME"
         
         # Helper function to normalize service account names for comparison
         function Compare-ServiceAccount {
@@ -120,9 +152,23 @@ function Get-ServicesFromAllServers {
             # Use Get-CimInstance to get service information
             $foundServices = @()
             $allServices = Get-CimInstance -ClassName Win32_Service
+            $debugLog += "Found $($allServices.Count) total services"
             
+            $matchCount = 0
+            $checkedCount = 0
             $allServices | ForEach-Object {
-                if (Compare-ServiceAccount -storedName $_.StartName -searchAccount $serviceAccount) {
+                $serviceName = $_.Name
+                $startName = $_.StartName
+                $checkedCount++
+                
+                # Only log first 5 services to avoid spam
+                if ($checkedCount -le 5) {
+                    $debugLog += "Checking service '$serviceName' with StartName '$startName'"
+                }
+                
+                if (Compare-ServiceAccount -storedName $startName -searchAccount $serviceAccount) {
+                    $matchCount++
+                    $debugLog += "MATCH #${matchCount}: Adding service '$serviceName' (StartName: '$startName')"
                     $foundServices += [PSCustomObject]@{
                         Name = $_.Name
                         DisplayName = $_.DisplayName
@@ -131,6 +177,8 @@ function Get-ServicesFromAllServers {
                     }
                 }
             }
+            
+            $debugLog += "Found $($foundServices.Count) matching services"
             
             # Return both the services and debug info
             return [PSCustomObject]@{
@@ -156,13 +204,13 @@ function Get-ServicesFromAllServers {
         if ($result.Success) {
             $scriptResult = $result.Result
             
-            # Log any errors from debug info
-            if ($scriptResult.DebugLog -and $scriptResult.DebugLog.Count -gt 0) {
+            # Log debug information
+            if ($scriptResult.DebugLog) {
+                $logger.LogInfo("=== DEBUG INFO for $serverName ===", "Service Discovery")
                 foreach ($debugLine in $scriptResult.DebugLog) {
-                    if ($debugLine -like "*ERROR*") {
-                        $logger.LogError("Service discovery issue on $serverName`: $debugLine", "Service Discovery")
-                    }
+                    $logger.LogInfo("  $debugLine", "Service Discovery")
                 }
+                $logger.LogInfo("=== END DEBUG INFO for $serverName ===", "Service Discovery")
             }
             
             $services = $scriptResult.Services
@@ -187,16 +235,32 @@ function Display-ServiceSummary {
         [object]$UserInteraction,
         [object]$Logger
     )
+    $Logger.LogInfo("Display-ServiceSummary started. Results count: $($Results.Count)", "Debug")
+    
     [UserInteraction]::WriteBlankLine()
     $totalServices = 0
+    $serverCount = 0
     
     foreach ($result in $Results) {
+        $serverCount++
+        $Logger.LogInfo("Processing server $serverCount/$($Results.Count): $($result.Server)", "Debug")
+        
         Write-Host "SERVER: $($result.Server)" -ForegroundColor Yellow
         $services = $result.Services
         
+        $serviceCount = if ($services) { $services.Count } else { 0 }
+        $Logger.LogInfo("Server $($result.Server) has $serviceCount services", "Debug")
+        
         if ($services -and $services.Count -gt 0) {
             $totalServices += $services.Count
-            $UserInteraction.WriteTable($services, @('Name','DisplayName','StartName','State'), @('Service Name','Display Name','Run As Account','Status'), @(), @{})
+            $Logger.LogInfo("About to call WriteTable for $($services.Count) services", "Debug")
+            try {
+                $UserInteraction.WriteTable($services, @('Name','DisplayName','StartName','State'), @('Service Name','Display Name','Run As Account','Status'), @(), @{})
+                $Logger.LogInfo("WriteTable completed successfully", "Debug")
+            } catch {
+                $Logger.LogError("WriteTable failed: $($_.Exception.Message)", "Debug")
+                throw
+            }
         } else {
             Write-Host "  No services found running as the service account." -ForegroundColor Gray
         }
@@ -210,51 +274,6 @@ function Display-ServiceSummary {
     }
     
     $Logger.LogInfo("Displayed service summary: $totalServices services across $($Results.Count) servers", "Automation")
-}
-
-function Select-ServiceAccountForUpdate {
-    param(
-        [object[]]$Results,
-        [object]$UserInteraction,
-        [object]$Logger
-    )
-    
-    # Get unique service account names from all services
-    $uniqueAccounts = @()
-    foreach ($result in $Results) {
-        if ($result.Services -and $result.Services.Count -gt 0) {
-            foreach ($service in $result.Services) {
-                if ($service.StartName -and $uniqueAccounts -notcontains $service.StartName) {
-                    $uniqueAccounts += $service.StartName
-                }
-            }
-        }
-    }
-    
-    if ($uniqueAccounts.Count -eq 0) {
-        [UserInteraction]::WriteActivity("No service accounts found in the results.", 'warning')
-        return $null
-    }
-    
-    if ($uniqueAccounts.Count -eq 1) {
-        [UserInteraction]::WriteActivity("Only one service account found: '$($uniqueAccounts[0])'. Using this account.", 'info')
-        $Logger.LogInfo("Single service account auto-selected: $($uniqueAccounts[0])", "Service Account Selection")
-        return $uniqueAccounts[0]
-    }
-    
-    [UserInteraction]::WriteBlankLine()
-    [UserInteraction]::WriteActivity("Multiple service accounts found. Please select which one to update:", 'info')
-    [UserInteraction]::WriteBlankLine()
-    
-    # Show menu of service accounts
-    $selectedAccount = $UserInteraction.ShowMenu("Select Service Account to Update", $uniqueAccounts, $false, $false)
-    
-    if ($selectedAccount -eq '__EXIT__') {
-        return $null
-    }
-    
-    $Logger.LogInfo("User selected service account: $selectedAccount", "Service Account Selection")
-    return $selectedAccount
 }
 
 function Confirm-ServicePasswordUpdate {
@@ -277,9 +296,14 @@ function Confirm-ServicePasswordUpdate {
         return $false
     }
     
-    return $UserInteraction.PromptUserForConfirmation("Do you want to update the password for these $totalServices service(s)?")
+    $confirm = $UserInteraction.PromptUserForConfirmation("Do you want to update the password for these $totalServices service(s)? (y/n)")
+    if ($confirm -ne 'y') {
+        [UserInteraction]::WriteActivity("Operation cancelled by user.", 'warning')
+        $Logger.LogWarning("Password update operation cancelled by user", "User Action")
+        return $false
+    }
+    return $true
 }
-
 function Update-ServicePasswordsOnAllServers {
     param(
         [object[]]$SessionInfos,
