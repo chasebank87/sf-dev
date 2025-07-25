@@ -257,11 +257,8 @@ class SessionHelper {
             $commandType = $debugHelper.AnalyzeScriptBlockForCommandType($ScriptBlock)
             $this.Logger.LogInfo("Command type determined: $commandType", "Session Execution")
             
-            if ($ArgumentList.Count -gt 0) {
-                return $debugHelper.InvokeOrDebug($Session, $ScriptBlock, $Description, $commandType, $ArgumentList)
-            } else {
-                return $debugHelper.InvokeOrDebug($Session, $ScriptBlock, $Description, $commandType)
-            }
+            # Always pass ArgumentList, even if empty, to avoid overload issues
+            return $debugHelper.InvokeOrDebug($Session, $ScriptBlock, $Description, $commandType, $ArgumentList)
         } catch {
             $this.Logger.LogError("Failed to execute command on session: $Description - $($_.Exception.Message)", "Session Execution")
             throw
@@ -273,11 +270,8 @@ class SessionHelper {
         try {
             $this.Logger.LogInfo("Executing command on session: $Description (explicit command type: $CommandType)", "Session Execution")
             
-            if ($ArgumentList.Count -gt 0) {
-                return $this.GetDebugHelper().InvokeOrDebug($Session, $ScriptBlock, $Description, $CommandType, $ArgumentList)
-            } else {
-                return $this.GetDebugHelper().InvokeOrDebug($Session, $ScriptBlock, $Description, $CommandType)
-            }
+            # Always pass ArgumentList, even if empty, to avoid overload issues
+            return $this.GetDebugHelper().InvokeOrDebug($Session, $ScriptBlock, $Description, $CommandType, $ArgumentList)
         } catch {
             $this.Logger.LogError("Failed to execute command on session: $Description - $($_.Exception.Message)", "Session Execution")
             throw
