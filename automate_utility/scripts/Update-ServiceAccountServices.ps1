@@ -62,7 +62,8 @@ function Get-ServicesFromAllServers {
     $allResults = @()
     $getServicesScript = {
         param($serviceAccount)
-        Get-WmiObject Win32_Service | Where-Object { $_.StartName -eq $serviceAccount } |
+        # Use Get-CimInstance instead of Get-WmiObject (more secure, modern approach)
+        Get-CimInstance Win32_Service | Where-Object { $_.StartName -eq $serviceAccount } |
             Select-Object Name, DisplayName, StartName, State
     }
     $results = $SessionHelper.ExecuteOnMultipleSessions($SessionInfos, $getServicesScript, "Retrieve services running as $ServiceAccount", @($ServiceAccount))
@@ -136,12 +137,23 @@ function Update-ServicePasswordsOnAllServers {
         $plainPassword = [Runtime.InteropServices.Marshal]::PtrToStringBSTR(
             [Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePassword)
         )
-        $service = Get-WmiObject Win32_Service -Filter "Name='$serviceName'"
+        
+        # Use Get-Service instead of WMI for service operations
+        $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
         if ($service) {
-            $service.Change($null, $null, $null, $null, $null, $null, $user, $plainPassword)
-            $service.StopService() | Out-Null
-            $service.StartService() | Out-Null
-            return $true
+            # Stop the service before changing credentials
+            if ($service.Status -eq 'Running') {
+                Stop-Service -Name $serviceName -Force -ErrorAction SilentlyContinue
+                Start-Sleep -Seconds 2
+            }
+            
+            # Use sc.exe to change service credentials (more reliable than WMI)
+            $result = & sc.exe config $serviceName obj= $user password= $plainPassword
+            
+            # Start the service back up
+            Start-Service -Name $serviceName -ErrorAction SilentlyContinue
+            
+            return $LASTEXITCODE -eq 0
         } else {
             return $false
         }

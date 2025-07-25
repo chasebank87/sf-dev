@@ -246,8 +246,8 @@ class SessionHelper {
         try {
             $this.Logger.LogInfo("Executing command on session: $Description", "Session Execution")
             
-            # Intelligently determine command type based on script block content
-            $commandType = $this.AnalyzeScriptBlockForCommandType($ScriptBlock)
+            # Use DebugHelper to analyze script block for security (proper separation of concerns)
+            $commandType = $this.GetDebugHelper().AnalyzeScriptBlockForCommandType($ScriptBlock)
             
             if ($ArgumentList.Count -gt 0) {
                 return $this.GetDebugHelper().InvokeOrDebug($Session, $ScriptBlock, $Description, $commandType, $ArgumentList)
@@ -276,72 +276,7 @@ class SessionHelper {
         }
     }
 
-    [string]AnalyzeScriptBlockForCommandType([scriptblock]$ScriptBlock) {
-        $scriptText = $ScriptBlock.ToString()
-        
-        # List of safe commands that should be allowed in debug mode
-        $safeCommands = @(
-            'Get-ScheduledTask',
-            'Get-Content',
-            'Test-Path',
-            'Get-ChildItem',
-            'Get-Item',
-            'Get-Process',
-            'Get-Service',
-            'Get-ComputerInfo',
-            'Get-PSSession',
-            'Get-Module',
-            'Get-Command',
-            'Get-Date',
-            'Where-Object',
-            'Select-Object',
-            'ForEach-Object',
-            'Measure-Object',
-            'Test-NetConnection',
-            'Test-Connection',
-            'TcpClient'
-        )
-        
-        # Check if the script contains primarily safe commands
-        foreach ($safeCommand in $safeCommands) {
-            if ($scriptText -match "\b$safeCommand\b") {
-                $this.Logger.LogInfo("Script block contains safe command '$safeCommand', allowing execution in debug mode", "Session Execution")
-                return $safeCommand
-            }
-        }
-        
-        # If no safe commands found, check for potentially unsafe operations
-        $unsafePatterns = @(
-            '\bSet-ScheduledTask\b',
-            '\bEnable-ScheduledTask\b',
-            '\bDisable-ScheduledTask\b',
-            '\bNew-ScheduledTask\b',
-            '\bRemove-ScheduledTask\b',
-            '\bSet-Content\b',
-            '\bAdd-Content\b',
-            '\bRemove-Item\b',
-            '\bNew-Item\b',
-            '\bCopy-Item\b',
-            '\bMove-Item\b',
-            '\bRename-Item\b',
-            '\bStart-Process\b',
-            '\bStop-Process\b',
-            '\bRestart-Service\b',
-            '\bStart-Service\b',
-            '\bStop-Service\b'
-        )
-        
-        foreach ($unsafePattern in $unsafePatterns) {
-            if ($scriptText -match $unsafePattern) {
-                $this.Logger.LogWarning("Script block contains potentially unsafe operation matching '$unsafePattern'", "Session Execution")
-                return "UnsafeOperation"
-            }
-        }
-        
-        # Default to Custom for unknown operations
-        $this.Logger.LogInfo("Script block does not contain recognized safe or unsafe patterns, defaulting to Custom", "Session Execution")
-        return "Custom"
-    }
+
     
     [hashtable]ExecuteOnMultipleSessions([object[]]$Sessions, [scriptblock]$ScriptBlock, [string]$Description, [object[]]$ArgumentList = @()) {
         $results = @{}

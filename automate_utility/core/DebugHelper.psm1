@@ -87,6 +87,8 @@ class DebugHelper {
             'Get-Item',
             'Get-Process',
             'Get-Service',
+            'Get-CimInstance',
+            'Get-WmiObject',
             'Get-ComputerInfo',
             'Get-PSSession',
             'Get-Module',
@@ -103,6 +105,111 @@ class DebugHelper {
         }
         
         return -not $this.IsDebugMode
+    }
+
+    [string]AnalyzeScriptBlockForCommandType([scriptblock]$ScriptBlock) {
+        $scriptText = $ScriptBlock.ToString()
+        
+        # First, check for potentially unsafe operations - this takes precedence
+        $unsafePatterns = @(
+            '\bSet-ScheduledTask\b',
+            '\bEnable-ScheduledTask\b',
+            '\bDisable-ScheduledTask\b',
+            '\bNew-ScheduledTask\b',
+            '\bRemove-ScheduledTask\b',
+            '\bSet-Content\b',
+            '\bAdd-Content\b',
+            '\bRemove-Item\b',
+            '\bNew-Item\b',
+            '\bCopy-Item\b',
+            '\bMove-Item\b',
+            '\bRename-Item\b',
+            '\bStart-Process\b',
+            '\bStop-Process\b',
+            '\bRestart-Service\b',
+            '\bStart-Service\b',
+            '\bStop-Service\b',
+            '\bSet-Service\b',
+            '\bSuspend-Service\b',
+            '\bResume-Service\b',
+            '\bChange\b',
+            '\bStopService\b',
+            '\bStartService\b'
+        )
+        
+        foreach ($unsafePattern in $unsafePatterns) {
+            if ($scriptText -match $unsafePattern) {
+                $this.Logger.LogWarning("Script block contains potentially unsafe operation matching '$unsafePattern'", "Security Analysis")
+                return "UnsafeOperation"
+            }
+        }
+        
+        # Check for dangerous pipelines - any pipe followed by unsafe commands
+        $dangerousPipelinePatterns = @(
+            '\|\s*(Stop-Service|Start-Service|Restart-Service|Set-Service|Suspend-Service|Resume-Service)',
+            '\|\s*(Stop-Process|Start-Process)',
+            '\|\s*(Remove-Item|Set-Content|Add-Content)',
+            '\|\s*(Set-ScheduledTask|Enable-ScheduledTask|Disable-ScheduledTask|Remove-ScheduledTask)',
+            '\|\s*(ForEach-Object|%)\s*{\s*[^}]*\.(Stop|Start|Restart|Change|StopService|StartService)'
+        )
+        
+        foreach ($pipelinePattern in $dangerousPipelinePatterns) {
+            if ($scriptText -match $pipelinePattern) {
+                $this.Logger.LogWarning("Script block contains dangerous pipeline pattern matching '$pipelinePattern'", "Security Analysis")
+                return "UnsafeOperation"
+            }
+        }
+        
+        # List of safe commands that should be allowed in debug mode
+        $safeCommands = @(
+            'Get-ScheduledTask',
+            'Get-Content',
+            'Test-Path',
+            'Get-ChildItem',
+            'Get-Item',
+            'Get-Process',
+            'Get-Service',
+            'Get-CimInstance',
+            'Get-WmiObject',
+            'Get-ComputerInfo',
+            'Get-PSSession',
+            'Get-Module',
+            'Get-Command',
+            'Get-Date',
+            'Where-Object',
+            'Select-Object',
+            'ForEach-Object',
+            'Measure-Object',
+            'Test-NetConnection',
+            'Test-Connection',
+            'TcpClient'
+        )
+        
+        # Check if the script contains only safe commands (no unsafe operations detected above)
+        $foundSafeCommand = $false
+        foreach ($safeCommand in $safeCommands) {
+            if ($scriptText -match "\b$safeCommand\b") {
+                $foundSafeCommand = $true
+                $this.Logger.LogInfo("Script block contains safe command '$safeCommand'", "Security Analysis")
+                break
+            }
+        }
+        
+        if ($foundSafeCommand) {
+            # Double-check: ensure it's truly safe by verifying no unsafe patterns exist
+            # (this is redundant given our order above, but provides extra safety)
+            foreach ($unsafePattern in $unsafePatterns) {
+                if ($scriptText -match $unsafePattern) {
+                    $this.Logger.LogWarning("Script block contains mixed safe/unsafe operations, treating as unsafe", "Security Analysis")
+                    return "UnsafeOperation"
+                }
+            }
+            return "Get-Service"  # Return a safe command type that's whitelisted
+        }
+        
+        # Default to Custom for unknown operations
+        $this.Logger.LogInfo("Script block does not contain recognized safe patterns, defaulting to Custom", "Security Analysis")
+        return "Custom"
     }
 
     [void]ExecuteOrDebug([scriptblock]$Command, [string]$Description, [string]$CommandType) {
