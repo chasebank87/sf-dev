@@ -46,7 +46,7 @@ class UserInteraction {
                 Write-Host "    [b] Go Back" -ForegroundColor Cyan
             }
             if ($isMainMenu) {
-                Write-Host "    [d] Toggle Debug Mode" -ForegroundColor Yellow
+                Write-Host "    [d] Toggle Debug Mode"
             }
             Write-Host "    [x] Exit" -ForegroundColor Red
             Write-Host ""
@@ -266,9 +266,12 @@ class UserInteraction {
     }
 
     [string] PromptUserForConfirmation([string]$Message) {
-        $response = Read-Host $Message
-        if ($null -eq $response) { return '' }
-        return $response
+        do {
+            $response = Read-Host "$Message (y/n)"
+            if ($response -match '^(y|yes)$') { return $true }
+            if ($response -match '^(n|no)$') { return $false }
+            Write-Host "Please enter 'y' for yes or 'n' for no." -ForegroundColor Yellow
+        } while ($true)
     }
 
     static [string] PromptWithTimeout([string]$Prompt, [int]$TimeoutSeconds = 3) {
