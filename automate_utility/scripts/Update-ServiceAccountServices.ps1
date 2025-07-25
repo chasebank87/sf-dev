@@ -16,7 +16,7 @@ function Select-ServiceAccount {
         Get-CimInstance -ClassName Win32_Service | Select-Object -ExpandProperty StartName | Where-Object { $_ -and $_ -ne '' } | Sort-Object -Unique
     }
     $Logger.LogInfo("Querying all servers for unique service accounts...", "Service Discovery")
-    $results = $SessionHelper.ExecuteOnMultipleSessions($SessionInfos, $getAccountsScript, "Retrieve unique service accounts")
+    $results = $SessionHelper.ExecuteOnMultipleSessions($SessionInfos, $getAccountsScript, "Retrieve unique service accounts", @())
     $allAccounts = @()
     foreach ($server in $results.Keys) {
         $result = $results[$server]
