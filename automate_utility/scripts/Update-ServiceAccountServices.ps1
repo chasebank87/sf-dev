@@ -223,7 +223,7 @@ function Display-ServiceSummary {
             $totalServices += $services.Count
             $Logger.LogInfo("About to call WriteTable for $($services.Count) services", "Debug")
             try {
-                $UserInteraction.WriteTable($services, @('Name','DisplayName','StartName','State'), @('Service Name','Display Name','Run As Account','Status'), @())
+                $UserInteraction.WriteTable($services, @('Name','DisplayName','StartName','State'), @('Service Name','Display Name','Run As Account','Status'), @(), @{})
                 $Logger.LogInfo("WriteTable completed successfully", "Debug")
             } catch {
                 $Logger.LogError("WriteTable failed: $($_.Exception.Message)", "Debug")
