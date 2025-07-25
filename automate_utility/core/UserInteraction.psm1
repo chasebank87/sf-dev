@@ -387,7 +387,7 @@ function Write-InlineProgressBar {
     [UserInteraction]::WriteInlineProgressBar($Current, $Total, $Label, $BarWidth)
 }
 
-function Simple-Menu {
+function Show-SimpleMenu {
     param(
         [string]$Title,
         [string[]]$Options
@@ -427,4 +427,4 @@ function Simple-Menu {
     return $null # Default return to satisfy linter
 }
 
-Export-ModuleMember -Function Initialize-UserInteraction, Get-UserInteraction, Show-Menu, Write-Activity, Write-Table, Write-BlankLine, Read-VerifiedPassword, Initialize-ProgressBar, Update-ProgressBar, Complete-ProgressBar, Write-InlineProgressBar, Simple-Menu
+Export-ModuleMember -Function Initialize-UserInteraction, Get-UserInteraction, Show-Menu, Write-Activity, Write-Table, Write-BlankLine, Read-VerifiedPassword, Initialize-ProgressBar, Update-ProgressBar, Complete-ProgressBar, Write-InlineProgressBar, Show-SimpleMenu

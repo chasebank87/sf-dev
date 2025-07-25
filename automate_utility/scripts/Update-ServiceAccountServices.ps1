@@ -104,7 +104,7 @@ function Invoke-UpdateServiceAccountServices {
     }
 
     # Now prompt the user to select a service account (after confirmation)
-    $selectedAccount = Simple-Menu -Title "Select the service account to update:" -Options $uniqueAccounts
+    $selectedAccount = Show-SimpleMenu -Title "Select the service account to update:" -Options $uniqueAccounts
     if (-not $selectedAccount) {
         [UserInteraction]::WriteActivity("No service account selected. Exiting.", 'warning')
         $logger.LogWarning("No service account selected", "User Action")
