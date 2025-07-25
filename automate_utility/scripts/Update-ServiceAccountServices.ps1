@@ -216,7 +216,8 @@ function Display-ServiceSummary {
         Write-Host "SERVER: $($result.Server)" -ForegroundColor Yellow
         $services = $result.Services
         
-        $Logger.LogInfo("Server $($result.Server) has $($services.Count if $services else 0) services", "Debug")
+        $serviceCount = if ($services) { $services.Count } else { 0 }
+        $Logger.LogInfo("Server $($result.Server) has $serviceCount services", "Debug")
         
         if ($services -and $services.Count -gt 0) {
             $totalServices += $services.Count
