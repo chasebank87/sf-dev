@@ -78,6 +78,16 @@ class DebugHelper {
     }
 
     [bool]ShouldExecuteCommand([string]$CommandType) {
+        # If debug mode is OFF, execute everything
+        if (-not $this.IsDebugMode) {
+            return $true
+        }
+        
+        # Special command type that bypasses all restrictions
+        if ($CommandType -eq "ExecuteAll") {
+            return $true
+        }
+        
         # Commands that are allowed to run in debug mode (retrieval commands)
         $allowedCommands = @(
             'Get-ScheduledTask',
@@ -104,11 +114,17 @@ class DebugHelper {
             }
         }
         
-        return -not $this.IsDebugMode
+        return false  # Block unsafe commands in debug mode
     }
 
     [string]AnalyzeScriptBlockForCommandType([scriptblock]$ScriptBlock) {
         $logger = Get-Logger
+        
+        # If debug mode is OFF, don't analyze - just return a safe command type
+        if (-not $this.IsDebugMode) {
+            return "ExecuteAll"  # Special command type that bypasses all restrictions
+        }
+        
         $scriptText = $ScriptBlock.ToString()
         
         # First, check for potentially unsafe operations - this takes precedence
@@ -151,7 +167,7 @@ class DebugHelper {
             '\|\s*(Stop-Process|Start-Process)',
             '\|\s*(Remove-Item|Set-Content|Add-Content)',
             '\|\s*(Set-ScheduledTask|Enable-ScheduledTask|Disable-ScheduledTask|Remove-ScheduledTask)',
-            '\|\s*(ForEach-Object|%)\s*{\s*[^}]*\.(Stop|Start|Restart|Change|StopService|StartService)'
+            '\|\s*(ForEach-Object|%)\s*{\s*[^}]*\$_\s*\.\s*(Stop|Start|Restart|Change|StopService|StartService)\s*\('
         )
         
         foreach ($pipelinePattern in $dangerousPipelinePatterns) {
