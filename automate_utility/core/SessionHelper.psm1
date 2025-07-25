@@ -82,7 +82,12 @@ class SessionHelper {
     
     # Dynamic property to always get the current DebugHelper instance
     [object] GetDebugHelper() {
-        return Get-DebugHelper
+        try {
+            return Get-DebugHelper
+        } catch {
+            $this.Logger.LogError("DebugHelper not available: $($_.Exception.Message)", "Session Management")
+            throw "DebugHelper not initialized. Ensure Initialize-DebugHelper is called before using SessionHelper."
+        }
     }
     
     [void]InitializeServerCache() {
@@ -247,12 +252,15 @@ class SessionHelper {
             $this.Logger.LogInfo("Executing command on session: $Description", "Session Execution")
             
             # Use DebugHelper to analyze script block for security (proper separation of concerns)
-            $commandType = $this.GetDebugHelper().AnalyzeScriptBlockForCommandType($ScriptBlock)
+            $debugHelper = $this.GetDebugHelper()
+            $this.Logger.LogInfo("DebugHelper retrieved successfully", "Session Execution")
+            $commandType = $debugHelper.AnalyzeScriptBlockForCommandType($ScriptBlock)
+            $this.Logger.LogInfo("Command type determined: $commandType", "Session Execution")
             
             if ($ArgumentList.Count -gt 0) {
-                return $this.GetDebugHelper().InvokeOrDebug($Session, $ScriptBlock, $Description, $commandType, $ArgumentList)
+                return $debugHelper.InvokeOrDebug($Session, $ScriptBlock, $Description, $commandType, $ArgumentList)
             } else {
-                return $this.GetDebugHelper().InvokeOrDebug($Session, $ScriptBlock, $Description, $commandType)
+                return $debugHelper.InvokeOrDebug($Session, $ScriptBlock, $Description, $commandType)
             }
         } catch {
             $this.Logger.LogError("Failed to execute command on session: $Description - $($_.Exception.Message)", "Session Execution")

@@ -108,7 +108,9 @@ class DebugHelper {
     }
 
     [string]AnalyzeScriptBlockForCommandType([scriptblock]$ScriptBlock) {
+        $logger = Get-Logger
         $scriptText = $ScriptBlock.ToString()
+        $logger.LogInfo("Analyzing script block: $scriptText", "Security Analysis")
         
         # First, check for potentially unsafe operations - this takes precedence
         $unsafePatterns = @(
@@ -139,7 +141,7 @@ class DebugHelper {
         
         foreach ($unsafePattern in $unsafePatterns) {
             if ($scriptText -match $unsafePattern) {
-                $this.Logger.LogWarning("Script block contains potentially unsafe operation matching '$unsafePattern'", "Security Analysis")
+                $logger.LogWarning("Script block contains potentially unsafe operation matching '$unsafePattern'", "Security Analysis")
                 return "UnsafeOperation"
             }
         }
@@ -155,7 +157,7 @@ class DebugHelper {
         
         foreach ($pipelinePattern in $dangerousPipelinePatterns) {
             if ($scriptText -match $pipelinePattern) {
-                $this.Logger.LogWarning("Script block contains dangerous pipeline pattern matching '$pipelinePattern'", "Security Analysis")
+                $logger.LogWarning("Script block contains dangerous pipeline pattern matching '$pipelinePattern'", "Security Analysis")
                 return "UnsafeOperation"
             }
         }
@@ -190,7 +192,7 @@ class DebugHelper {
         foreach ($safeCommand in $safeCommands) {
             if ($scriptText -match "\b$safeCommand\b") {
                 $foundSafeCommand = $true
-                $this.Logger.LogInfo("Script block contains safe command '$safeCommand'", "Security Analysis")
+                $logger.LogInfo("Script block contains safe command '$safeCommand'", "Security Analysis")
                 break
             }
         }
@@ -200,7 +202,7 @@ class DebugHelper {
             # (this is redundant given our order above, but provides extra safety)
             foreach ($unsafePattern in $unsafePatterns) {
                 if ($scriptText -match $unsafePattern) {
-                    $this.Logger.LogWarning("Script block contains mixed safe/unsafe operations, treating as unsafe", "Security Analysis")
+                    $logger.LogWarning("Script block contains mixed safe/unsafe operations, treating as unsafe", "Security Analysis")
                     return "UnsafeOperation"
                 }
             }
@@ -208,7 +210,7 @@ class DebugHelper {
         }
         
         # Default to Custom for unknown operations
-        $this.Logger.LogInfo("Script block does not contain recognized safe patterns, defaulting to Custom", "Security Analysis")
+        $logger.LogInfo("Script block does not contain recognized safe patterns, defaulting to Custom", "Security Analysis")
         return "Custom"
     }
 
