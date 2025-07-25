@@ -199,9 +199,8 @@ function Get-ServicesFromAllServers {
                 }
                 
                 $match = Compare-ServiceAccount -storedName $startName -searchAccount $serviceAccount
-                if ($checkedCount -le 10) {
-                    $debugLog += "Result: $match"
-                }
+                # Always log the result and reason for every service
+                $debugLog += "Result: $match for service '$serviceName' with StartName '$startName'"
                 if ($match) {
                     $matchCount++
                     $debugLog += "MATCH #${matchCount}: Adding service '$serviceName' (StartName: '$startName')"
