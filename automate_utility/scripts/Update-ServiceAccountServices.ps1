@@ -196,7 +196,7 @@ function Display-ServiceSummary {
         $services = $result.Services
         if ($services -and $services.Count -gt 0) {
             $totalServices += $services.Count
-            $UserInteraction.WriteTable($services, @('Name','DisplayName','State'), @('Name','Display Name','State'), @())
+            $UserInteraction.WriteTable($services, @('Name','DisplayName','StartName','State'), @('Service Name','Display Name','Run As Account','Status'), @())
         } else {
             Write-Host "  No services found running as the service account." -ForegroundColor Gray
         }
