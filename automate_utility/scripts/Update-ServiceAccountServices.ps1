@@ -62,9 +62,22 @@ function Get-ServicesFromAllServers {
     $allResults = @()
     $getServicesScript = {
         param($serviceAccount)
-        # Use Get-CimInstance instead of Get-WmiObject (more secure, modern approach)
-        Get-CimInstance Win32_Service | Where-Object { $_.StartName -eq $serviceAccount } |
-            Select-Object Name, DisplayName, StartName, State
+        # Use Get-Service with WMI lookup for service account info
+        $foundServices = @()
+        Get-Service | ForEach-Object {
+            $service = Get-WmiObject Win32_Service -Filter "Name='$($_.Name)'"
+            if ($service.StartName -eq $serviceAccount) {
+                $foundServices += [PSCustomObject]@{
+                    Name = $_.Name
+                    DisplayName = $_.DisplayName
+                    StartName = $service.StartName
+                    State = $_.Status
+                }
+            }
+        }
+        
+        # Return the services array, or empty array if none found
+        return $foundServices
     }
     $logger.LogInfo("About to execute with ServiceAccount: '$ServiceAccount'", "Automation")
     $results = $SessionHelper.ExecuteOnMultipleSessions($SessionInfos, $getServicesScript, "Retrieve services running as $ServiceAccount", @($ServiceAccount))
@@ -95,17 +108,26 @@ function Display-ServiceSummary {
         [object]$Logger
     )
     [UserInteraction]::WriteBlankLine()
+    $totalServices = 0
     foreach ($result in $Results) {
         Write-Host "SERVER: $($result.Server)" -ForegroundColor Yellow
         $services = $result.Services
         if ($services -and $services.Count -gt 0) {
+            $totalServices += $services.Count
             $UserInteraction.WriteTable($services, @('Name','DisplayName','State'), @('Name','Display Name','State'), @())
         } else {
-            Write-Host "No services found running as the service account." -ForegroundColor Gray
+            Write-Host "  No services found running as the service account." -ForegroundColor Gray
         }
         [UserInteraction]::WriteBlankLine()
     }
-    $Logger.LogInfo("Displayed service summary table with $($Results.Count) servers", "Automation")
+    
+    if ($totalServices -eq 0) {
+        [UserInteraction]::WriteActivity("No services found running as the service account on any server.", 'warning')
+    } else {
+        [UserInteraction]::WriteActivity("Found $totalServices service(s) across all servers.", 'info')
+    }
+    
+    $Logger.LogInfo("Displayed service summary: $totalServices services across $($Results.Count) servers", "Automation")
 }
 
 function Confirm-ServicePasswordUpdate {
@@ -114,13 +136,21 @@ function Confirm-ServicePasswordUpdate {
         [object]$Logger,
         [object]$UserInteraction
     )
-    $totalServices = ($Results | ForEach-Object { $_.Services.Count }) | Measure-Object -Sum | Select-Object -ExpandProperty Sum
+    # Count total services found
+    $totalServices = 0
+    foreach ($result in $Results) {
+        if ($result.Services -and $result.Services.Count -gt 0) {
+            $totalServices += $result.Services.Count
+        }
+    }
+    
     if ($totalServices -eq 0) {
-        [UserInteraction]::WriteActivity("No services found to update.", 'warning')
+        [UserInteraction]::WriteActivity("No services found to update. Exiting.", 'warning')
         $Logger.LogWarning("No services found to update", "Automation")
         return $false
     }
-    return $UserInteraction.PromptUserForConfirmation("Do you want to update the password for these $totalServices services?")
+    
+    return $UserInteraction.PromptUserForConfirmation("Do you want to update the password for these $totalServices service(s)?")
 }
 
 function Update-ServicePasswordsOnAllServers {
