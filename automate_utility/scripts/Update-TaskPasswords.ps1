@@ -5,23 +5,23 @@ using module core/DebugHelper.psm1
 using module core/SessionHelper.psm1
 
 function Invoke-UpdateTaskPasswords {
-    param([object]$Config)
+    param([object]$Config, [object]$DebugHelper)
     
-    # Initialize components (get fresh references each time to handle debug mode toggles)
-    $logger = Get-Logger
-    $UserInteraction = Get-UserInteraction
+    # Initialize components using singleton pattern
+    $logger = [Logger]::GetInstance()
+    $ui = [UserInteraction]::GetInstance()
     
     Clear-Host
-    [UserInteraction]::ShowScriptTitle("Update Task Passwords")
-    [UserInteraction]::WriteBlankLine()
-    [UserInteraction]::WriteActivity("Starting Quarterly Password Change process...", 'info')
+    $ui.ShowScriptTitle("Update Task Passwords")
+    $ui.WriteBlankLine()
+    $ui.WriteActivity("Starting Quarterly Password Change process...", 'info')
     
     $logger.LogInfo("Starting Quarterly Password Change process", "Automation")
     
     # Get service account from config
     $serviceAccount = $Config.service_account
     if (-not $serviceAccount) {
-        [UserInteraction]::WriteActivity("Service account not configured in config file!", 'error')
+        $ui.WriteActivity("Service account not configured in config file!", 'error')
         $logger.LogError("Service account not configured", "Configuration")
         return
     }
@@ -29,7 +29,7 @@ function Invoke-UpdateTaskPasswords {
     # Get all server names that have tasks configured
     $serversWithTasks = (Get-SessionHelper).GetServersWithTasks($serviceAccount)
     if ($serversWithTasks.Count -eq 0) {
-        [UserInteraction]::WriteActivity("No servers with tasks found in configuration", 'warning')
+        $ui.WriteActivity("No servers with tasks found in configuration", 'warning')
         $logger.LogWarning("No servers with tasks configured", "Configuration")
         return
     }
@@ -38,33 +38,33 @@ function Invoke-UpdateTaskPasswords {
     $logger.LogInfo("Processing $($serverNames.Count) servers for service account: $serviceAccount", "Automation")
     
     # Create sessions to all servers at once (with built-in retry and error handling)
-    [UserInteraction]::WriteActivity("Creating sessions to $($serverNames.Count) servers...", 'info')
+    $ui.WriteActivity("Creating sessions to $($serverNames.Count) servers...", 'info')
     $sessionInfos = (Get-SessionHelper).CreateMultipleSessions([string[]]$serverNames, $true)
     
     if ($sessionInfos.Count -eq 0) {
-        [UserInteraction]::WriteActivity("Failed to create any sessions. Cannot proceed.", 'error')
+        $ui.WriteActivity("Failed to create any sessions. Cannot proceed.", 'error')
         $logger.LogError("No sessions could be created", "Session Management")
         return
     }
     
     # Retrieve scheduled tasks from all servers
-    [UserInteraction]::WriteActivity("Retrieving scheduled tasks from all servers...", 'info')
+    $ui.WriteActivity("Retrieving scheduled tasks from all servers...", 'info')
     $allResults = Get-TasksFromAllServers -SessionInfos $sessionInfos -ServiceAccount $serviceAccount -SessionHelper (Get-SessionHelper)
     
     # Display results table
-    Display-TaskSummary -Results $allResults -UserInteraction $UserInteraction -Logger $logger
+    Display-TaskSummary -Results $allResults -ui $ui -Logger $logger
     
     # Check if user wants to proceed
-    if (-not (Confirm-PasswordUpdate -Results $allResults -Logger $logger -UserInteraction $UserInteraction)) {
+    if (-not (Confirm-PasswordUpdate -Results $allResults -Logger $logger -ui $ui)) {
         return
     }
     
     # Get new password
-    $newPassword = $UserInteraction.ReadVerifiedPassword("Enter the new password for the service account")
+    $newPassword = $ui.ReadVerifiedPassword("Enter the new password for the service account")
     $logger.LogUserInput("[PASSWORD ENTERED]", "New Password Input")
     
     # Update passwords on all servers
-    Update-TaskPasswordsOnAllServers -SessionInfos $sessionInfos -Results $allResults -ServiceAccount $serviceAccount -NewPassword $newPassword -SessionHelper (Get-SessionHelper) -UserInteraction $UserInteraction -Logger $logger
+    Update-TaskPasswordsOnAllServers -SessionInfos $sessionInfos -Results $allResults -ServiceAccount $serviceAccount -NewPassword $newPassword -SessionHelper (Get-SessionHelper) -ui $ui -Logger $logger
     
     # SessionHelper will automatically cleanup sessions when the application exits
     $logger.LogInfo("Task password update process completed", "Automation")
@@ -115,14 +115,16 @@ function Get-TasksFromAllServers {
             $missingExpectedTasks = @()
             
             # Add dynamic tasks
-            if ($dynamicTasks) {
-                $combinedTasks += $dynamicTasks.TaskName
-                [UserInteraction]::WriteActivity("Found $($dynamicTasks.Count) dynamic tasks matching $ServiceAccount on $serverName", 'info')
+            if ($dynamicTasks -and $dynamicTasks.Count -gt 0) {
+                foreach ($task in $dynamicTasks) {
+                    $combinedTasks += $task.TaskName
+                }
+                $ui.WriteActivity("Found $($dynamicTasks.Count) dynamic tasks matching $ServiceAccount on $serverName", 'info')
             }
             
             # Check expected tasks from configuration
             if ($serverInfo.Tasks -and $serverInfo.Tasks.Count -gt 0) {
-                [UserInteraction]::WriteActivity("Checking $($serverInfo.Tasks.Count) expected tasks for $serverName...", 'info')
+                $ui.WriteActivity("Checking $($serverInfo.Tasks.Count) expected tasks for $serverName...", 'info')
                 foreach ($expectedTask in $serverInfo.Tasks) {
                     $taskExists = $allTasks | Where-Object { $_.TaskName -eq $expectedTask }
                     if ($taskExists) {
@@ -133,26 +135,26 @@ function Get-TasksFromAllServers {
                             }
                         } else {
                             $combinedTasks += $expectedTask
-                            [UserInteraction]::WriteActivity("Expected task '$expectedTask' exists on $serverName but not using service account. Will update.", 'warning')
+                            $ui.WriteActivity("Expected task '$expectedTask' exists on $serverName but not using service account. Will update.", 'warning')
                         }
                     } else {
                         $missingExpectedTasks += $expectedTask
-                        [UserInteraction]::WriteActivity("Expected task '$expectedTask' not found on $serverName", 'warning')
+                        $ui.WriteActivity("Expected task '$expectedTask' not found on $serverName", 'warning')
                     }
                 }
             } else {
-                [UserInteraction]::WriteActivity("No expected tasks configured for $serverName", 'info')
+                $ui.WriteActivity("No expected tasks configured for $serverName", 'info')
             }
             
             if ($combinedTasks.Count -eq 0) {
-                [UserInteraction]::WriteActivity("No tasks found for $ServiceAccount on $serverName", 'warning')
+                $ui.WriteActivity("No tasks found for $ServiceAccount on $serverName", 'warning')
                 $allResults += [PSCustomObject]@{
                     Server = "$serverName ($($serverInfo.Address))"
                     Tasks = @()
                     MissingExpected = $missingExpectedTasks
                 }
             } else {
-                [UserInteraction]::WriteActivity("Found $($combinedTasks.Count) total tasks for $ServiceAccount on $serverName", 'info')
+                $ui.WriteActivity("Found $($combinedTasks.Count) total tasks for $ServiceAccount on $serverName", 'info')
                 $allResults += [PSCustomObject]@{
                     Server = "$serverName ($($serverInfo.Address))"
                     Tasks = $combinedTasks
@@ -160,7 +162,7 @@ function Get-TasksFromAllServers {
                 }
             }
         } else {
-            [UserInteraction]::WriteActivity("Error retrieving tasks from $serverName`: $($result.Error)", 'error')
+            $ui.WriteActivity("Error retrieving tasks from $serverName`: $($result.Error)", 'error')
             $allResults += [PSCustomObject]@{
                 Server = "$serverName ($($serverInfo.Address))"
                 Tasks = @("[ERROR: $($result.Error)]")
@@ -175,19 +177,20 @@ function Get-TasksFromAllServers {
 function Display-TaskSummary {
     param(
         [object[]]$Results,
-        [object]$UserInteraction,
+        [object]$ui,
         [object]$Logger
     )
     
-    [UserInteraction]::WriteBlankLine()
-    $UserInteraction.WriteTable($Results, @('Server','Tasks'), @('Server','Tasks'), @())
+    $ui.WriteBlankLine()
+    # Use the 3-parameter wrapper method
+    $ui.WriteTable($Results, @('Server','Tasks'), @('Server','Tasks'))
     $Logger.LogInfo("Displayed task summary table with $($Results.Count) servers", "Automation")
     
     # Show missing expected tasks
     $serversWithMissingTasks = $Results | Where-Object { $_.MissingExpected -and $_.MissingExpected.Count -gt 0 }
     if ($serversWithMissingTasks.Count -gt 0) {
-        [UserInteraction]::WriteBlankLine()
-        [UserInteraction]::WriteActivity("The following expected tasks were not found on some servers:", 'warning')
+        $ui.WriteBlankLine()
+        $ui.WriteActivity("The following expected tasks were not found on some servers:", 'warning')
         $Logger.LogWarning("$($serversWithMissingTasks.Count) servers have missing expected tasks", "Task Discovery")
         
         foreach ($result in $serversWithMissingTasks) {
@@ -205,18 +208,18 @@ function Confirm-PasswordUpdate {
     param(
         [object[]]$Results,
         [object]$Logger,
-        [object]$UserInteraction
+        [object]$ui
     )
     
     # Calculate total tasks
     $totalTasks = ($Results | ForEach-Object { if ($_.Tasks) { $_.Tasks.Count } else { 0 } } | Measure-Object -Sum).Sum
     if ($totalTasks -eq 0) { $totalTasks = 1 }
     
-    $confirm = $UserInteraction.PromptUserForConfirmation("Do you want to proceed with updating passwords for these tasks? (y/n)")
+    $confirm = $ui.PromptUserForConfirmation("Do you want to proceed with updating passwords for these tasks? (y/n)")
     $Logger.LogUserInput($confirm, "Password Update Confirmation")
     
     if ($confirm -ne 'y') {
-        [UserInteraction]::WriteActivity("Operation cancelled by user.", 'warning')
+        $ui.WriteActivity("Operation cancelled by user.", 'warning')
         $Logger.LogWarning("Password update operation cancelled by user", "User Action")
         return $false
     }
@@ -231,7 +234,7 @@ function Update-TaskPasswordsOnAllServers {
         [string]$ServiceAccount,
         [System.Security.SecureString]$NewPassword,
         [object]$SessionHelper,
-        [object]$UserInteraction,
+        [object]$ui,
         [object]$Logger
     )
     
@@ -239,7 +242,7 @@ function Update-TaskPasswordsOnAllServers {
     $totalTasks = ($Results | ForEach-Object { if ($_.Tasks) { $_.Tasks.Count } else { 0 } } | Measure-Object -Sum).Sum
     if ($totalTasks -eq 0) { $totalTasks = 1 }
     
-    $progressBar = $UserInteraction.InitializeProgressBar($totalTasks, "Updating scheduled task passwords")
+    $progressBar = $ui.InitializeProgressBar($totalTasks, "Updating scheduled task passwords")
     
     $successCount = 0
     $failureCount = 0
@@ -263,13 +266,13 @@ function Update-TaskPasswordsOnAllServers {
         
         $sessionInfo = $sessionLookup[$serverAddress]
         if (-not $sessionInfo) {
-            [UserInteraction]::WriteActivity("No session found for $serverName, skipping...", 'error')
+            $ui.WriteActivity("No session found for $serverName, skipping...", 'error')
             $Logger.LogError("No session found for $serverName", "Session Management")
             continue
         }
         
         if (-not $tasks -or $tasks.Count -eq 0) {
-            [UserInteraction]::WriteActivity("No tasks to update for $serverName, skipping...", 'info')
+            $ui.WriteActivity("No tasks to update for $serverName, skipping...", 'info')
             continue
         }
         
@@ -280,24 +283,24 @@ function Update-TaskPasswordsOnAllServers {
             $updateResult = Update-SingleTaskPassword -SessionInfo $sessionInfo -TaskName $task -ServiceAccount $ServiceAccount -NewPassword $NewPassword -SessionHelper $SessionHelper -Logger $Logger
             
             if ($updateResult.Success) {
-                [UserInteraction]::WriteActivity("Successfully updated password for '$task' on $serverName", 'info')
+                $ui.WriteActivity("Successfully updated password for '$task' on $serverName", 'info')
                 $successCount++
             } elseif ($updateResult.NotFound) {
                 $notFoundTasks += [PSCustomObject]@{ Server = $serverName; Task = $task }
                 $Logger.LogTaskOperation($serverName, $task, "Task Not Found", $false)
             } else {
-                [UserInteraction]::WriteActivity("Failed to update password for '$task' on $serverName`: $($updateResult.Error)", 'error')
+                $ui.WriteActivity("Failed to update password for '$task' on $serverName`: $($updateResult.Error)", 'error')
                 $failureCount++
             }
             
-            $UserInteraction.UpdateProgressBar($progressBar, 1, "$serverName - $task")
+            $ui.UpdateProgressBar($progressBar, 1, "$serverName - $task")
         }
     }
     
     # Show summary of not found tasks
     if ($notFoundTasks.Count -gt 0) {
-        [UserInteraction]::WriteBlankLine()
-        [UserInteraction]::WriteActivity("The following tasks were not found and were skipped:", 'warning')
+        $ui.WriteBlankLine()
+        $ui.WriteActivity("The following tasks were not found and were skipped:", 'warning')
         $Logger.LogWarning("$($notFoundTasks.Count) tasks were not found and skipped", "Task Operation")
         foreach ($nf in $notFoundTasks) {
             Write-Host "  - $($nf.Task) on $($nf.Server)" -ForegroundColor Yellow
@@ -305,7 +308,7 @@ function Update-TaskPasswordsOnAllServers {
         }
     }
     
-    $UserInteraction.CompleteProgressBar($progressBar)
+    $ui.CompleteProgressBar($progressBar)
     $Logger.LogInfo("Password update operation completed. Success: $successCount, Failures: $failureCount, Skipped: $($notFoundTasks.Count)", "Automation")
 }
 
@@ -340,17 +343,34 @@ function Update-SingleTaskPassword {
             return @{ Success = $false; NotFound = $true; Error = "Task not found" }
         }
         
+        # Convert SecureString to plain text before passing to remote session
+        $plainPassword = [Runtime.InteropServices.Marshal]::PtrToStringBSTR(
+            [Runtime.InteropServices.Marshal]::SecureStringToBSTR($NewPassword)
+        )
+        
         # Update the task password
         $updatePasswordScript = {
-            param($taskName, $user, $securePassword)
-            $plainPassword = [Runtime.InteropServices.Marshal]::PtrToStringBSTR(
-                [Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePassword)
-            )
-            Set-ScheduledTask -TaskName $taskName -User $user -Password $plainPassword
-            Enable-ScheduledTask -TaskName $taskName
+            param($taskName, $user, $plainPassword)
+            try {
+                # First verify the task exists
+                $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+                if (-not $task) {
+                    throw "Task '$taskName' not found"
+                }
+                
+                # Update the task password
+                Set-ScheduledTask -TaskName $taskName -User $user -Password $plainPassword
+                
+                # Re-enable the task
+                Enable-ScheduledTask -TaskName $taskName
+                
+                return $true
+            } catch {
+                throw "Failed to update task password: $($_.Exception.Message)"
+            }
         }
         
-        $sessionHelper.ExecuteOnSession($session, $updatePasswordScript, "Updating password for task $TaskName on $serverName", @($TaskName, $ServiceAccount, $NewPassword))
+        $sessionHelper.ExecuteOnSession($session, $updatePasswordScript, "Updating password for task $TaskName on $serverName", @($TaskName, $ServiceAccount, $plainPassword))
         
         $Logger.LogTaskOperation($serverName, $TaskName, "Password Update", $true)
         return @{ Success = $true; NotFound = $false; Error = $null }

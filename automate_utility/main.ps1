@@ -6,6 +6,42 @@ using module core/Logger.psm1
 using module core/DebugHelper.psm1
 using module core/SessionHelper.psm1
 
+function Test-AdministrativePrivileges {
+    try {
+        $currentUser = [Security.Principal.WindowsIdentity]::GetCurrent()
+        $principal = New-Object Security.Principal.WindowsPrincipal($currentUser)
+        return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    } catch {
+        return $false
+    }
+}
+
+function Show-AdminPrivilegeWarning {
+    param([object]$UserInteraction)
+    
+    Clear-Host
+    $UserInteraction.ShowScriptTitle("Administrative Privileges Required")
+    $UserInteraction.WriteBlankLine()
+    $UserInteraction.WriteActivity("This application requires administrative privileges to perform certain operations.", 'warning')
+    $UserInteraction.WriteBlankLine()
+    $UserInteraction.WriteActivity("Some features may not work correctly without admin rights:", 'info')
+    $UserInteraction.WriteActivity(" Service password updates", 'info')
+    $UserInteraction.WriteActivity(" Service start/stop operations", 'info')
+    $UserInteraction.WriteActivity(" Registry modifications", 'info')
+    $UserInteraction.WriteActivity(" System configuration changes", 'info')
+    $UserInteraction.WriteBlankLine()
+    $UserInteraction.WriteActivity("Current privileges: Standard User", 'warning')
+    $UserInteraction.WriteBlankLine()
+    $UserInteraction.WriteActivity("To run with administrative privileges:", 'info')
+    $UserInteraction.WriteActivity("1. Right-click on PowerShell", 'info')
+    $UserInteraction.WriteActivity("2. Select 'Run as administrator'", 'info')
+    $UserInteraction.WriteActivity("3. Navigate to this directory", 'info')
+    $UserInteraction.WriteActivity("4. Run the script again", 'info')
+    $UserInteraction.WriteBlankLine()
+    $UserInteraction.WriteActivity("Press any key to continue anyway (some features may fail)...", 'warning')
+    $null = Read-Host
+}
+
 Initialize-ModuleInstaller
 $ModuleInstaller = Get-ModuleInstaller
 $ModuleInstaller.InstallRequiredModules(@('psAsciiArt', 'powershell-yaml', 'WriteAscii'))
@@ -16,6 +52,7 @@ $ModuleInstaller.InstallRequiredModules(@('psAsciiArt', 'powershell-yaml', 'Writ
 . $PSScriptRoot/scripts/Health-Monitor.ps1
 . $PSScriptRoot/scripts/Update-ServiceAccountServices.ps1
 
+# Initialize core components using singleton pattern
 Initialize-ConfigLoader
 Initialize-UserInteraction
 
@@ -39,9 +76,21 @@ if (-not (Test-Path $configPath)) {
 
 $yamlConfig = $ConfigLoader.ImportConfig($configPath)
 
+# Initialize singletons with configuration
 Initialize-Logger -Config $yamlConfig
 Initialize-DebugHelper -Config $yamlConfig
 Initialize-SessionHelper -Config $yamlConfig
+
+# Get singleton instances once at the top level
+$Logger = [Logger]::GetInstance()
+$UserInteraction = [UserInteraction]::GetInstance()
+$DebugHelper = [DebugHelper]::GetInstance()
+
+# Check for administrative privileges
+if (-not (Test-AdministrativePrivileges)) {
+    $Logger.LogWarning("Application started without administrative privileges", "Privilege Check")
+    Show-AdminPrivilegeWarning -UserInteraction $UserInteraction
+}
 
 function Show-MainMenu {
     while ($true) {
@@ -49,8 +98,10 @@ function Show-MainMenu {
         $category = $UserInteraction.ShowMenu($yamlConfig, 'Select Task Category', @('Quarterly Password Change', 'Monthly Close Process', 'Audit Requests', 'Patching', 'Administration'), $true, $false)
         if ($category -eq '__BACK__') { continue }
         if ($category -eq '__EXIT__') {
+            $logger = [Logger]::GetInstance()
             $logger.LogInfo("User chose to exit from main menu", "User Action")
-            [UserInteraction]::WriteActivity("Exiting application...", 'info')
+            $ui = [UserInteraction]::GetInstance()
+            $ui.WriteActivity("Exiting application...", 'info')
             Start-Sleep -Seconds 1
             $logger.CloseSession()
             exit
@@ -59,21 +110,40 @@ function Show-MainMenu {
             $currentDebugStatus = if ($yamlConfig.debug) { "ENABLED" } else { "DISABLED" }
             $newDebugStatus = if ($yamlConfig.debug) { $false } else { $true }
             $newDebugStatusText = if ($newDebugStatus) { "ENABLED" } else { "DISABLED" }
-            [UserInteraction]::WriteActivity("Current Debug Mode: $currentDebugStatus", 'info')
-            [UserInteraction]::WriteActivity("Switching Debug Mode to: $newDebugStatusText", 'info')
+            $ui = [UserInteraction]::GetInstance()
+            $ui.WriteActivity("Current Debug Mode: $currentDebugStatus", 'info')
+            $ui.WriteActivity("Switching Debug Mode to: $newDebugStatusText", 'info')
             try {
-                # Update config and reload
+                # Update config file and reload
                 $yamlConfig = $ConfigLoader.UpdateDebugSetting($configPath, $newDebugStatus)
                 
+                # Reload config from file to ensure we have the latest
+                $yamlConfig = $ConfigLoader.ImportConfig($configPath)
+                
                 # Reinitialize all components that depend on debug settings
-                [UserInteraction]::WriteActivity("Reinitializing components with new debug setting...", 'info')
+                $ui.WriteActivity("Reinitializing components with new debug setting...", 'info')
+                
+                # Reset singletons to ensure fresh instances
+                [DebugHelper]::Reset()
+                
                 Initialize-DebugHelper -Config $yamlConfig
                 Initialize-SessionHelper -Config $yamlConfig
                 
-                [UserInteraction]::WriteActivity("Debug mode successfully updated to: $newDebugStatusText", 'info')
+                # Reinitialize top-level variables to get fresh instances
+                $DebugHelper = [DebugHelper]::GetInstance()
+                $SessionHelper = Get-SessionHelper
+                
+                # Also refresh Logger and UserInteraction to ensure consistency
+                $Logger = [Logger]::GetInstance()
+                $UserInteraction = [UserInteraction]::GetInstance()
+                
+                # Verify debug mode is actually updated
+                $ui.WriteActivity("Debug mode verification: $($DebugHelper.IsDebug())", 'info')
+                
+                $ui.WriteActivity("Debug mode successfully updated to: $newDebugStatusText", 'info')
                 Start-Sleep -Seconds 1
             } catch {
-                [UserInteraction]::WriteActivity("Failed to update debug mode: $_", 'error')
+                $ui.WriteActivity("Failed to update debug mode: $_", 'error')
                 Start-Sleep -Seconds 2
             }
             continue
@@ -83,29 +153,31 @@ function Show-MainMenu {
                 Show-QuarterlyMenu
             }
             'Monthly Close Process' {
-                [UserInteraction]::WriteActivity("No monthly close scripts configured yet.", 'info')
+                $ui = [UserInteraction]::GetInstance()
+                $logger = [Logger]::GetInstance()
+                $ui.WriteActivity("No monthly close scripts configured yet.", 'info')
                 Start-Sleep -Seconds 2
-                [UserInteraction]::WriteBlankLine()
-                [UserInteraction]::WriteActivity("What would you like to do?", 'info')
+                $ui.WriteBlankLine()
+                $ui.WriteActivity("What would you like to do?", 'info')
                 $choice = Read-Host "Enter '1' to return to main menu or 'q' to quit"
                 $logger.LogUserInput($choice, "Post-Message Choice")
                 switch ($choice) {
                     '1' {
                         $logger.LogInfo("User chose to return to main menu", "User Action")
-                        [UserInteraction]::WriteActivity("Returning to main menu...", 'info')
+                        $ui.WriteActivity("Returning to main menu...", 'info')
                         Start-Sleep -Seconds 1
                         continue
                     }
                     'q' {
                         $logger.LogInfo("User chose to quit application", "User Action")
-                        [UserInteraction]::WriteActivity("Exiting application...", 'info')
+                        $ui.WriteActivity("Exiting application...", 'info')
                         Start-Sleep -Seconds 1
                         $logger.CloseSession()
                         exit
                     }
                     default {
                         $logger.LogWarning("Invalid choice entered: $choice", "User Input")
-                        [UserInteraction]::WriteActivity("Invalid choice. Returning to main menu...", 'warning')
+                        $ui.WriteActivity("Invalid choice. Returning to main menu...", 'warning')
                         Start-Sleep -Seconds 2
                         continue
                     }
@@ -141,90 +213,90 @@ function Show-QuarterlyMenu {
         }
         switch ($automation) {
             'Update Task Passwords' {
-                $logger.LogAutomationStart("Update Task Passwords")
-                Invoke-UpdateTaskPasswords -Config $yamlConfig
-                $logger.LogAutomationEnd("Update Task Passwords", $true)
-                [UserInteraction]::WriteBlankLine()
-                [UserInteraction]::WriteActivity("Automation completed. What would you like to do?", 'info')
+                $Logger.LogAutomationStart("Update Task Passwords")
+                Invoke-UpdateTaskPasswords -Config $yamlConfig -DebugHelper $DebugHelper
+                $Logger.LogAutomationEnd("Update Task Passwords", $true)
+                $UserInteraction.WriteBlankLine()
+                $UserInteraction.WriteActivity("Automation completed. What would you like to do?", 'info')
                 $choice = Read-Host "Enter '1' to return to quarterly menu or 'q' to quit"
-                $logger.LogUserInput($choice, "Post-Automation Choice")
+                $Logger.LogUserInput($choice, "Post-Automation Choice")
                 switch ($choice) {
                     '1' {
-                        $logger.LogInfo("User chose to return to quarterly menu", "User Action")
-                        [UserInteraction]::WriteActivity("Returning to quarterly menu...", 'info')
+                        $Logger.LogInfo("User chose to return to quarterly menu", "User Action")
+                        $UserInteraction.WriteActivity("Returning to quarterly menu...", 'info')
                         Start-Sleep -Seconds 1
                         continue
                     }
                     'q' {
-                        $logger.LogInfo("User chose to quit application", "User Action")
-                        [UserInteraction]::WriteActivity("Exiting application...", 'info')
+                        $Logger.LogInfo("User chose to quit application", "User Action")
+                        $UserInteraction.WriteActivity("Exiting application...", 'info')
                         Start-Sleep -Seconds 1
-                        $logger.CloseSession()
+                        $Logger.CloseSession()
                         exit
                     }
                     default {
-                        $logger.LogWarning("Invalid choice entered: $choice", "User Input")
-                        [UserInteraction]::WriteActivity("Invalid choice. Returning to quarterly menu...", 'warning')
+                        $Logger.LogWarning("Invalid choice entered: $choice", "User Input")
+                        $UserInteraction.WriteActivity("Invalid choice. Returning to quarterly menu...", 'warning')
                         Start-Sleep -Seconds 2
                         continue
                     }
                 }
             }
             'Update MXLS Passwords' {
-                $logger.LogAutomationStart("Update MXLS Passwords")
-                Invoke-UpdateMxlsPasswords -Config $yamlConfig
-                $logger.LogAutomationEnd("Update MXLS Passwords", $true)
-                [UserInteraction]::WriteBlankLine()
-                [UserInteraction]::WriteActivity("Automation completed. What would you like to do?", 'info')
+                $Logger.LogAutomationStart("Update MXLS Passwords")
+                Invoke-UpdateMxlsPasswords -Config $yamlConfig -DebugHelper $DebugHelper
+                $Logger.LogAutomationEnd("Update MXLS Passwords", $true)
+                $UserInteraction.WriteBlankLine()
+                $UserInteraction.WriteActivity("Automation completed. What would you like to do?", 'info')
                 $choice = Read-Host "Enter '1' to return to quarterly menu or 'q' to quit"
-                $logger.LogUserInput($choice, "Post-Automation Choice")
+                $Logger.LogUserInput($choice, "Post-Automation Choice")
                 switch ($choice) {
                     '1' {
-                        $logger.LogInfo("User chose to return to quarterly menu", "User Action")
-                        [UserInteraction]::WriteActivity("Returning to quarterly menu...", 'info')
+                        $Logger.LogInfo("User chose to return to quarterly menu", "User Action")
+                        $UserInteraction.WriteActivity("Returning to quarterly menu...", 'info')
                         Start-Sleep -Seconds 1
                         continue
                     }
                     'q' {
-                        $logger.LogInfo("User chose to quit application", "User Action")
-                        [UserInteraction]::WriteActivity("Exiting application...", 'info')
+                        $Logger.LogInfo("User chose to quit application", "User Action")
+                        $UserInteraction.WriteActivity("Exiting application...", 'info')
                         Start-Sleep -Seconds 1
-                        $logger.CloseSession()
+                        $Logger.CloseSession()
                         exit
                     }
                     default {
-                        $logger.LogWarning("Invalid choice entered: $choice", "User Input")
-                        [UserInteraction]::WriteActivity("Invalid choice. Returning to quarterly menu...", 'warning')
+                        $Logger.LogWarning("Invalid choice entered: $choice", "User Input")
+                        $UserInteraction.WriteActivity("Invalid choice. Returning to quarterly menu...", 'warning')
                         Start-Sleep -Seconds 2
                         continue
                     }
                 }
             }
             'Update Service Account Services' {
-                $logger.LogAutomationStart("Update Service Account Services")
-                Invoke-UpdateServiceAccountServices -Config $yamlConfig
-                $logger.LogAutomationEnd("Update Service Account Services", $true)
-                [UserInteraction]::WriteBlankLine()
-                [UserInteraction]::WriteActivity("Automation completed. What would you like to do?", 'info')
+                $Logger.LogAutomationStart("Update Service Account Services")
+                Invoke-UpdateServiceAccountServices -Config $yamlConfig -DebugHelper $DebugHelper
+                $Logger.LogAutomationEnd("Update Service Account Services", $true)
+                $UserInteraction.WriteBlankLine()
+                $UserInteraction.WriteActivity("Automation completed. What would you like to do?", 'info')
                 $choice = Read-Host "Enter '1' to return to quarterly menu or 'q' to quit"
-                $logger.LogUserInput($choice, "Post-Automation Choice")
+                $Logger.LogUserInput($choice, "Post-Automation Choice")
                 switch ($choice) {
                     '1' {
-                        $logger.LogInfo("User chose to return to quarterly menu", "User Action")
-                        [UserInteraction]::WriteActivity("Returning to quarterly menu...", 'info')
+                        $Logger.LogInfo("User chose to return to quarterly menu", "User Action")
+                        $UserInteraction.WriteActivity("Returning to quarterly menu...", 'info')
                         Start-Sleep -Seconds 1
                         continue
                     }
                     'q' {
-                        $logger.LogInfo("User chose to quit application", "User Action")
-                        [UserInteraction]::WriteActivity("Exiting application...", 'info')
+                        $Logger.LogInfo("User chose to quit application", "User Action")
+                        $UserInteraction.WriteActivity("Exiting application...", 'info')
                         Start-Sleep -Seconds 1
-                        $logger.CloseSession()
+                        $Logger.CloseSession()
                         exit
                     }
                     default {
-                        $logger.LogWarning("Invalid choice entered: $choice", "User Input")
-                        [UserInteraction]::WriteActivity("Invalid choice. Returning to quarterly menu...", 'warning')
+                        $Logger.LogWarning("Invalid choice entered: $choice", "User Input")
+                        $UserInteraction.WriteActivity("Invalid choice. Returning to quarterly menu...", 'warning')
                         Start-Sleep -Seconds 2
                         continue
                     }
@@ -237,41 +309,43 @@ function Show-QuarterlyMenu {
 function Show-AuditMenu {
     while ($true) {
         Clear-Host
-        $automation = $UserInteraction.ShowMenu($yamlConfig, 'Audit Requests', @(), $true, $true)
+        $ui = [UserInteraction]::GetInstance()
+        $logger = [Logger]::GetInstance()
+        $automation = $ui.ShowMenu($yamlConfig, 'Audit Requests', @(), $true, $true)
         if ($automation -eq '__BACK__') {
             $logger.LogMenuSelection("Go Back", "Audit Menu")
             return
         }
         if ($automation -eq '__EXIT__') {
             $logger.LogInfo("User chose to exit from audit menu", "User Action")
-            [UserInteraction]::WriteActivity("Exiting application...", 'info')
+            $ui.WriteActivity("Exiting application...", 'info')
             Start-Sleep -Seconds 1
             $logger.CloseSession()
             exit
         }
-        [UserInteraction]::WriteActivity("No audit automations configured yet.", 'info')
+        $ui.WriteActivity("No audit automations configured yet.", 'info')
         Start-Sleep -Seconds 2
-        [UserInteraction]::WriteBlankLine()
-        [UserInteraction]::WriteActivity("What would you like to do?", 'info')
+        $ui.WriteBlankLine()
+        $ui.WriteActivity("What would you like to do?", 'info')
         $choice = Read-Host "Enter '1' to return to audit menu or 'q' to quit"
         $logger.LogUserInput($choice, "Post-Message Choice")
         switch ($choice) {
             '1' {
                 $logger.LogInfo("User chose to return to audit menu", "User Action")
-                [UserInteraction]::WriteActivity("Returning to audit menu...", 'info')
+                $ui.WriteActivity("Returning to audit menu...", 'info')
                 Start-Sleep -Seconds 1
                 continue
             }
             'q' {
                 $logger.LogInfo("User chose to quit application", "User Action")
-                [UserInteraction]::WriteActivity("Exiting application...", 'info')
+                $ui.WriteActivity("Exiting application...", 'info')
                 Start-Sleep -Seconds 1
                 $logger.CloseSession()
                 exit
             }
             default {
                 $logger.LogWarning("Invalid choice entered: $choice", "User Input")
-                [UserInteraction]::WriteActivity("Invalid choice. Returning to audit menu...", 'warning')
+                $ui.WriteActivity("Invalid choice. Returning to audit menu...", 'warning')
                 Start-Sleep -Seconds 2
                 continue
             }
@@ -282,41 +356,43 @@ function Show-AuditMenu {
 function Show-PatchingMenu {
     while ($true) {
         Clear-Host
-        $automation = $UserInteraction.ShowMenu($yamlConfig, 'Patching Automations', @(), $true, $true)
+        $ui = [UserInteraction]::GetInstance()
+        $logger = [Logger]::GetInstance()
+        $automation = $ui.ShowMenu($yamlConfig, 'Patching Automations', @(), $true, $true)
         if ($automation -eq '__BACK__') {
             $logger.LogMenuSelection("Go Back", "Patching Menu")
             return
         }
         if ($automation -eq '__EXIT__') {
             $logger.LogInfo("User chose to exit from patching menu", "User Action")
-            [UserInteraction]::WriteActivity("Exiting application...", 'info')
+            $ui.WriteActivity("Exiting application...", 'info')
             Start-Sleep -Seconds 1
             $logger.CloseSession()
             exit
         }
-        [UserInteraction]::WriteActivity("No patching automations configured yet.", 'info')
+        $ui.WriteActivity("No patching automations configured yet.", 'info')
         Start-Sleep -Seconds 2
-        [UserInteraction]::WriteBlankLine()
-        [UserInteraction]::WriteActivity("What would you like to do?", 'info')
+        $ui.WriteBlankLine()
+        $ui.WriteActivity("What would you like to do?", 'info')
         $choice = Read-Host "Enter '1' to return to patching menu or 'q' to quit"
         $logger.LogUserInput($choice, "Post-Message Choice")
         switch ($choice) {
             '1' {
                 $logger.LogInfo("User chose to return to patching menu", "User Action")
-                [UserInteraction]::WriteActivity("Returning to patching menu...", 'info')
+                $ui.WriteActivity("Returning to patching menu...", 'info')
                 Start-Sleep -Seconds 1
                 continue
             }
             'q' {
                 $logger.LogInfo("User chose to quit application", "User Action")
-                [UserInteraction]::WriteActivity("Exiting application...", 'info')
+                $ui.WriteActivity("Exiting application...", 'info')
                 Start-Sleep -Seconds 1
                 $logger.CloseSession()
                 exit
             }
             default {
                 $logger.LogWarning("Invalid choice entered: $choice", "User Input")
-                [UserInteraction]::WriteActivity("Invalid choice. Returning to patching menu...", 'warning')
+                $ui.WriteActivity("Invalid choice. Returning to patching menu...", 'warning')
                 Start-Sleep -Seconds 2
                 continue
             }
@@ -327,98 +403,100 @@ function Show-PatchingMenu {
 function Show-AdminMenu {
     while ($true) {
         Clear-Host
-        $adminOption = $UserInteraction.ShowMenu($yamlConfig, 'Administration', @('Start Environment', 'Stop Environment', 'Health Monitor'), $true, $true)
+        $ui = [UserInteraction]::GetInstance()
+        $logger = [Logger]::GetInstance()
+        $adminOption = $ui.ShowMenu($yamlConfig, 'Administration', @('Start Environment', 'Stop Environment', 'Health Monitor'), $true, $true)
         if ($adminOption -eq '__BACK__') {
             $logger.LogMenuSelection("Go Back", "Admin Menu")
             return
         }
         if ($adminOption -eq '__EXIT__') {
             $logger.LogInfo("User chose to exit from administration menu", "User Action")
-            [UserInteraction]::WriteActivity("Exiting application...", 'info')
+            $ui.WriteActivity("Exiting application...", 'info')
             Start-Sleep -Seconds 1
             $logger.CloseSession()
             exit
         }
         switch ($adminOption) {
             'Start Environment' {
-                $logger.LogAutomationStart("Start Environment")
-                Invoke-AdminEnvironment -Config $yamlConfig -Mode 'Start'
-                $logger.LogAutomationEnd("Start Environment", $true)
-                [UserInteraction]::WriteBlankLine()
-                [UserInteraction]::WriteActivity("Automation completed. What would you like to do?", 'info')
+                $Logger.LogAutomationStart("Start Environment")
+                Invoke-AdminEnvironment -Config $yamlConfig -Mode 'Start' -DebugHelper $DebugHelper
+                $Logger.LogAutomationEnd("Start Environment", $true)
+                $UserInteraction.WriteBlankLine()
+                $UserInteraction.WriteActivity("Automation completed. What would you like to do?", 'info')
                 $choice = Read-Host "Enter '1' to return to administration menu or 'q' to quit"
-                $logger.LogUserInput($choice, "Post-Automation Choice")
+                $Logger.LogUserInput($choice, "Post-Automation Choice")
                 switch ($choice) {
                     '1' {
-                        $logger.LogInfo("User chose to return to administration menu", "User Action")
-                        [UserInteraction]::WriteActivity("Returning to administration menu...", 'info')
+                        $Logger.LogInfo("User chose to return to administration menu", "User Action")
+                        $UserInteraction.WriteActivity("Returning to administration menu...", 'info')
                         Start-Sleep -Seconds 1
                         continue
                     }
                     'q' {
-                        $logger.LogInfo("User chose to quit application", "User Action")
-                        [UserInteraction]::WriteActivity("Exiting application...", 'info')
+                        $Logger.LogInfo("User chose to quit application", "User Action")
+                        $UserInteraction.WriteActivity("Exiting application...", 'info')
                         Start-Sleep -Seconds 1
-                        $logger.CloseSession()
+                        $Logger.CloseSession()
                         exit
                     }
                     default {
-                        $logger.LogWarning("Invalid choice entered: $choice", "User Input")
-                        [UserInteraction]::WriteActivity("Invalid choice. Returning to administration menu...", 'warning')
+                        $Logger.LogWarning("Invalid choice entered: $choice", "User Input")
+                        $UserInteraction.WriteActivity("Invalid choice. Returning to administration menu...", 'warning')
                         Start-Sleep -Seconds 2
                         continue
                     }
                 }
             }
             'Stop Environment' {
-                $logger.LogAutomationStart("Stop Environment")
-                Invoke-AdminEnvironment -Config $yamlConfig -Mode 'Stop'
-                $logger.LogAutomationEnd("Stop Environment", $true)
-                [UserInteraction]::WriteBlankLine()
-                [UserInteraction]::WriteActivity("Automation completed. What would you like to do?", 'info')
+                $Logger.LogAutomationStart("Stop Environment")
+                Invoke-AdminEnvironment -Config $yamlConfig -Mode 'Stop' -DebugHelper $DebugHelper
+                $Logger.LogAutomationEnd("Stop Environment", $true)
+                $UserInteraction.WriteBlankLine()
+                $UserInteraction.WriteActivity("Automation completed. What would you like to do?", 'info')
                 $choice = Read-Host "Enter '1' to return to administration menu or 'q' to quit"
-                $logger.LogUserInput($choice, "Post-Automation Choice")
+                $Logger.LogUserInput($choice, "Post-Automation Choice")
                 switch ($choice) {
                     '1' {
-                        $logger.LogInfo("User chose to return to administration menu", "User Action")
-                        [UserInteraction]::WriteActivity("Returning to administration menu...", 'info')
+                        $Logger.LogInfo("User chose to return to administration menu", "User Action")
+                        $UserInteraction.WriteActivity("Returning to administration menu...", 'info')
                         Start-Sleep -Seconds 1
                         continue
                     }
                     'q' {
-                        $logger.LogInfo("User chose to quit application", "User Action")
-                        [UserInteraction]::WriteActivity("Exiting application...", 'info')
+                        $Logger.LogInfo("User chose to quit application", "User Action")
+                        $UserInteraction.WriteActivity("Exiting application...", 'info')
                         Start-Sleep -Seconds 1
-                        $logger.CloseSession()
+                        $Logger.CloseSession()
                         exit
                     }
                     default {
-                        $logger.LogWarning("Invalid choice entered: $choice", "User Input")
-                        [UserInteraction]::WriteActivity("Invalid choice. Returning to administration menu...", 'warning')
+                        $Logger.LogWarning("Invalid choice entered: $choice", "User Input")
+                        $UserInteraction.WriteActivity("Invalid choice. Returning to administration menu...", 'warning')
                         Start-Sleep -Seconds 2
                         continue
                     }
                 }
             }
             'Health Monitor' {
-                $logger.LogAutomationStart("Health Monitor")
-                $result = Invoke-HealthMonitor -Config $yamlConfig
+                $Logger.LogAutomationStart("Health Monitor")
+                $result = Invoke-HealthMonitor -Config $yamlConfig -DebugHelper $DebugHelper
                 
                 # Health Monitor now handles its own confirmation and returns either '__BACK__' or '__EXIT__'
                 if ($result -eq '__BACK__') {
                     # User chose to go back to menu
-                    $logger.LogInfo("User chose to return to administration menu from health monitor", "User Action")
+                    $Logger.LogInfo("User chose to return to administration menu from health monitor", "User Action")
                     continue
                 } elseif ($result -eq '__EXIT__') {
                     # User chose to exit application
-                    $logger.LogInfo("User chose to exit application from health monitor", "User Action")
-                    [UserInteraction]::WriteActivity("Exiting application...", 'info')
+                    $Logger.LogInfo("User chose to exit application from health monitor", "User Action")
+                    $UserInteraction.WriteActivity("Exiting application...", 'info')
                     Start-Sleep -Seconds 1
-                    $logger.CloseSession()
+                    $Logger.CloseSession()
                     exit
                 } else {
                     # For any other result, log completion and continue to menu
-                    $logger.LogAutomationEnd("Health Monitor", $result)
+                    $Logger.LogAutomationEnd("Health Monitor", $result)
                     continue
                 }
             }
@@ -438,7 +516,10 @@ try {
     }
     
     # Close logger
-    if ($logger) {
+    try {
+        $logger = [Logger]::GetInstance()
         $logger.CloseSession()
+    } catch {
+        # Ignore logger cleanup errors during exit
     }
 } 

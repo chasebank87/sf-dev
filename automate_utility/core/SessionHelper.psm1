@@ -70,8 +70,8 @@ class SessionHelper {
     
     SessionHelper([object]$Config) {
         $this.Config = $Config
-        $this.Logger = Get-Logger
-        $this.UserInteraction = Get-UserInteraction
+        $this.Logger = [Logger]::GetInstance()
+        $this.UserInteraction = [UserInteraction]::GetInstance()
         $this.SessionPool = [SessionPool]::new()
         
         # Pre-validate and cache server configurations
@@ -83,7 +83,7 @@ class SessionHelper {
     # Dynamic property to always get the current DebugHelper instance
     [object] GetDebugHelper() {
         try {
-            return Get-DebugHelper
+            return [DebugHelper]::GetInstance()
         } catch {
             $this.Logger.LogError("DebugHelper not available: $($_.Exception.Message)", "Session Management")
             throw "DebugHelper not initialized. Ensure Initialize-DebugHelper is called before using SessionHelper."
@@ -169,15 +169,15 @@ class SessionHelper {
             $attempt++
             
             try {
-                [UserInteraction]::WriteActivity("Creating session to $ServerName ($ServerAddress) - Attempt $attempt/$($this.DefaultRetryCount)", 'info')
+                $this.UserInteraction.WriteActivity("Creating session to $ServerName ($ServerAddress) - Attempt $attempt/$($this.DefaultRetryCount)", 'info')
                 $this.Logger.LogInfo("Creating PowerShell session to $ServerName ($ServerAddress) - Attempt $attempt", "Session Management")
                 
-                $session = $this.GetDebugHelper().NewPSSessionOrDebug($ServerAddress, "Creating session to $ServerName")
+                $session = $this.CreatePSSessionWithDebug($ServerAddress, "Creating session to $ServerName")
                 
                 # Test the session immediately
                 if ($this.TestSessionHealth($session)) {
                     $this.Logger.LogInfo("Successfully created session to $ServerName ($ServerAddress)", "Session Management")
-                    [UserInteraction]::WriteActivity("Successfully connected to $ServerName", 'info')
+                    $this.UserInteraction.WriteActivity("Successfully connected to $ServerName", 'info')
                     return $session
                 } else {
                     throw "Session health check failed"
@@ -188,7 +188,7 @@ class SessionHelper {
                 $this.Logger.LogWarning("Session creation attempt $attempt failed for $ServerName`: $($_.Exception.Message)", "Session Management")
                 
                 if ($attempt -lt $this.DefaultRetryCount) {
-                    [UserInteraction]::WriteActivity("Connection failed, retrying in $($this.DefaultRetryDelaySeconds) seconds...", 'warning')
+                    $this.UserInteraction.WriteActivity("Connection failed, retrying in $($this.DefaultRetryDelaySeconds) seconds...", 'warning')
                     Start-Sleep -Seconds $this.DefaultRetryDelaySeconds
                 }
             }
@@ -197,7 +197,7 @@ class SessionHelper {
         # All attempts failed
         $errorMsg = "Failed to create session to $ServerName ($ServerAddress) after $($this.DefaultRetryCount) attempts. Last error: $($lastException.Exception.Message)"
         $this.Logger.LogError($errorMsg, "Session Management")
-        [UserInteraction]::WriteActivity($errorMsg, 'error')
+        $this.UserInteraction.WriteActivity($errorMsg, 'error')
         throw $lastException
     }
     
@@ -213,6 +213,15 @@ class SessionHelper {
         } catch {
             return $false
         }
+    }
+    
+    [object]CreatePSSessionWithDebug([string]$ComputerName, [string]$Description) {
+        # Use DebugHelper to log the command if in debug mode, but SessionHelper manages the actual session creation
+        $debugHelper = $this.GetDebugHelper()
+        $debugHelper.LogCommand("New-PSSession -ComputerName '$ComputerName' -EnableNetworkAccess", $Description)
+        
+        # Always create real sessions, even in debug mode (SessionHelper's responsibility)
+        return New-PSSession -ComputerName $ComputerName -EnableNetworkAccess -ErrorAction Stop
     }
     
     [object[]]CreateMultipleSessions([string[]]$ServerNames, [bool]$UsePool = $true) {
@@ -240,7 +249,7 @@ class SessionHelper {
         $this.UserInteraction.CompleteProgressBar($progressBar)
         
         if ($failedServers.Count -gt 0) {
-            [UserInteraction]::WriteActivity("Failed to connect to $($failedServers.Count) servers: $($failedServers -join ', ')", 'warning')
+            $this.UserInteraction.WriteActivity("Failed to connect to $($failedServers.Count) servers: $($failedServers -join ', ')", 'warning')
         }
         
         $this.Logger.LogInfo("Created $($sessions.Count) sessions out of $($ServerNames.Count) requested", "Session Management")
@@ -321,7 +330,7 @@ class SessionHelper {
         $sessionCount = $this.SessionPool.GetActiveSessionCount()
         $this.SessionPool.CleanupAllSessions()
         $this.Logger.LogInfo("Cleaned up $sessionCount sessions", "Session Management")
-        [UserInteraction]::WriteActivity("Cleaned up $sessionCount PowerShell sessions", 'info')
+        $this.UserInteraction.WriteActivity("Cleaned up $sessionCount PowerShell sessions", 'info')
     }
     
     [void]CleanupIdleSessions() {

@@ -8,22 +8,19 @@ function Invoke-HealthMonitor {
     param(
         [Parameter(Mandatory)]
         [object]$Config,
+        [object]$DebugHelper,
         [int]$CheckInterval = 5,
         [int]$Timeout = 3600
     )
     
     # Function entry logging
-    $logger = Get-Logger
+    $logger = [Logger]::GetInstance()
     $logger.LogInfo("=== HEALTH MONITOR FUNCTION START ===", "Health Monitor")
     $logger.LogInfo("Check interval: $CheckInterval seconds", "Health Monitor")
     $logger.LogInfo("Timeout: $Timeout seconds", "Health Monitor")
     
-    # Initialize debug helper if not already initialized
-    if (-not $Global:DebugHelper) {
-        $logger.LogInfo("Initializing DebugHelper", "Health Monitor")
-        Initialize-DebugHelper -Config $Config
-    }
-    $debugHelper = Get-DebugHelper
+    # Get debug helper instance
+    $debugHelper = [DebugHelper]::GetInstance()
     $logger.LogInfo("Debug mode: $($debugHelper.IsDebug())", "Health Monitor")
     
     # Validate configuration
@@ -88,7 +85,8 @@ function Invoke-HealthMonitor {
         $logger.LogInfo("Initial health status displayed successfully", "Health Monitor")
     } catch {
         $logger.LogError("Error showing initial health status: $($_.Exception.Message)", "Health Monitor")
-        [UserInteraction]::WriteActivity("Error displaying initial status: $($_.Exception.Message)", 'error')
+        $ui = [UserInteraction]::GetInstance()
+        $ui.WriteActivity("Error displaying initial status: $($_.Exception.Message)", 'error')
         return $false
     }
 
@@ -143,56 +141,55 @@ function Invoke-HealthMonitor {
             Show-HealthStatus -Services $allServices -CheckCount $checkCount -StartTime $startTime
             $logger.LogInfo("[DIAG] After Show-HealthStatus", "Health Monitor")
 
-            # Check if all services are ready
+            # Check if all services are ready (but don't exit - continue monitoring)
             if ($readyCount -eq $totalCount) {
                 $servicesReady = $true
                 $logger.LogInfo("All services are ready! ($readyCount/$totalCount)", "Health Monitor")
-                # All services are ready - break out of monitoring loop
-                break
+                # Continue monitoring even when all services are ready
             }
 
             # Log progress
             $logger.LogInfo("Check #$checkCount completed - Ready: $readyCount/$totalCount", "Health Monitor")
 
-            # Auto-continue checking with optional user interruption
-            if (-not $servicesReady) {
-                [UserInteraction]::WriteBlankLine()
-                [UserInteraction]::WriteActivity("Press 'x' to quit, 'b' for menu, or Enter to check now", 'info')
-                
-                # Wait for CheckInterval seconds with persistent prompt, but allow user to interrupt
-                $startWait = Get-Date
-                while (((Get-Date) - $startWait).TotalSeconds -lt $CheckInterval) {
-                    if ([System.Console]::KeyAvailable) {
-                        $key = [System.Console]::ReadKey($true)
-                        switch ($key.KeyChar.ToString().ToLower()) {
-                            'x' { 
-                                $logger.LogInfo("User chose to exit during wait", "Health Monitor")
-                                break 3 
-                            }
-                            'b' { 
-                                $logger.LogInfo("User chose to go back during wait", "Health Monitor")
-                                return '__BACK__' 
-                            }
-                            "`r" { 
-                                # Enter key - break out of wait and continue immediately
-                                $logger.LogInfo("User chose to continue immediately", "Health Monitor")
-                                break 
-                            }
-                            default { 
-                                # Any other key - break out of wait and continue
-                                $logger.LogInfo("User pressed key to continue", "Health Monitor")
-                                break 
-                            }
+            # Always show user prompt and wait for input (regardless of service status)
+            $ui = [UserInteraction]::GetInstance()
+            $ui.WriteBlankLine()
+            $ui.WriteActivity("Press 'x' to quit, 'b' for menu, or Enter to check now", 'info')
+            
+            # Wait for CheckInterval seconds with persistent prompt, but allow user to interrupt
+            $startWait = Get-Date
+            while (((Get-Date) - $startWait).TotalSeconds -lt $CheckInterval) {
+                if ([System.Console]::KeyAvailable) {
+                    $key = [System.Console]::ReadKey($true)
+                    switch ($key.KeyChar.ToString().ToLower()) {
+                        'x' { 
+                            $logger.LogInfo("User chose to exit during wait", "Health Monitor")
+                            break 3 
                         }
-                        break
+                        'b' { 
+                            $logger.LogInfo("User chose to go back during wait", "Health Monitor")
+                            return '__BACK__' 
+                        }
+                        "`r" { 
+                            # Enter key - break out of wait and continue immediately
+                            $logger.LogInfo("User chose to continue immediately", "Health Monitor")
+                            break 
+                        }
+                        default { 
+                            # Any other key - break out of wait and continue
+                            $logger.LogInfo("User pressed key to continue", "Health Monitor")
+                            break 
+                        }
                     }
-                    Start-Sleep -Milliseconds 100  # Check for input every 100ms
+                    break
                 }
+                Start-Sleep -Milliseconds 100  # Check for input every 100ms
             }
             $logger.LogInfo("[DIAG] Loop iteration END (CheckCount=$checkCount)", "Health Monitor")
         } catch {
             $logger.LogError("[DIAG] Exception in main loop: $($_.Exception.Message)", "Health Monitor")
-            [UserInteraction]::WriteActivity("Exception in main loop: $($_.Exception.Message)", 'error')
+            $ui = [UserInteraction]::GetInstance()
+            $ui.WriteActivity("Exception in main loop: $($_.Exception.Message)", 'error')
             break
         }
     }
@@ -206,32 +203,33 @@ function Invoke-HealthMonitor {
     $logger.LogInfo("All services ready: $servicesReady", "Health Monitor")
     
     # Show final status and require confirmation before returning to menu
-    [UserInteraction]::WriteBlankLine()
+    $ui = [UserInteraction]::GetInstance()
+    $ui.WriteBlankLine()
     Write-Host "========================================" -ForegroundColor Cyan
     if ($servicesReady) {
-        [UserInteraction]::WriteActivity("ALL SERVICES ARE READY!", 'info')
-        [UserInteraction]::WriteBlankLine()
-        [UserInteraction]::WriteActivity("All monitored services are now responding", 'info')
-        [UserInteraction]::WriteActivity("Total Duration: $($duration.ToString('hh\:mm\:ss'))", 'info')
-        [UserInteraction]::WriteActivity("Total Checks: $checkCount", 'info')
+        $ui.WriteActivity("ALL SERVICES ARE READY!", 'info')
+        $ui.WriteBlankLine()
+        $ui.WriteActivity("All monitored services are now responding", 'info')
+        $ui.WriteActivity("Total Duration: $($duration.ToString('hh\:mm\:ss'))", 'info')
+        $ui.WriteActivity("Total Checks: $checkCount", 'info')
     } else {
-        [UserInteraction]::WriteActivity("MONITORING STOPPED", 'warning')
-        [UserInteraction]::WriteBlankLine()
+        $ui.WriteActivity("MONITORING STOPPED", 'warning')
+        $ui.WriteBlankLine()
         if (((Get-Date) - $startTime).TotalSeconds -ge $Timeout) {
-            [UserInteraction]::WriteActivity("Timeout reached. Some services may not be ready.", 'warning')
+            $ui.WriteActivity("Timeout reached. Some services may not be ready.", 'warning')
         } else {
-            [UserInteraction]::WriteActivity("User chose to stop monitoring.", 'warning')
+            $ui.WriteActivity("User chose to stop monitoring.", 'warning')
         }
-        [UserInteraction]::WriteActivity("Total Duration: $($duration.ToString('hh\:mm\:ss'))", 'info')
-        [UserInteraction]::WriteActivity("Total Checks: $checkCount", 'info')
+        $ui.WriteActivity("Total Duration: $($duration.ToString('hh\:mm\:ss'))", 'info')
+        $ui.WriteActivity("Total Checks: $checkCount", 'info')
     }
     Write-Host "========================================" -ForegroundColor Cyan
-    [UserInteraction]::WriteBlankLine()
+    $ui.WriteBlankLine()
     
     # Always require user confirmation before returning to menu
-    $UserInteraction = Get-UserInteraction
+    $ui = [UserInteraction]::GetInstance()
     while ($true) {
-        $finalChoice = $UserInteraction.PromptUserForConfirmation("Press 'b' to return to administration menu or 'x' to exit application")
+        $finalChoice = $ui.PromptUserForConfirmation("Press 'b' to return to administration menu or 'x' to exit application")
         switch ($finalChoice.ToLower()) {
             'b' { 
                 $logger.LogInfo("User chose to return to administration menu", "Health Monitor")
@@ -242,7 +240,7 @@ function Invoke-HealthMonitor {
                 return '__EXIT__'
             }
             default { 
-                [UserInteraction]::WriteActivity("Invalid choice. Please press 'b' for menu or 'x' to exit.", 'error')
+                $ui.WriteActivity("Invalid choice. Please press 'b' for menu or 'x' to exit.", 'error')
                 continue
             }
         }
@@ -268,12 +266,12 @@ function Test-PortConnectivity {
         if ($Port -match "(\d+)-(\d+)") {
             $startPort = [int]$matches[1]
             $endPort = [int]$matches[2]
-            $logger = Get-Logger
+            $logger = [Logger]::GetInstance()
             
             # Test each port in the range
             for ($p = $startPort; $p -le $endPort; $p++) {
                 $testCmd = "TcpClient test to $Server`:$p with ${TimeoutSeconds}s timeout"
-                $logger = Get-Logger
+                $logger = [Logger]::GetInstance()
                 $logger.LogInfo("[DIAG] (Range) Before port $p on $Server", "Health Monitor")
                 $debugHelper.LogCommand($testCmd, "Testing port $p on $Server with ${TimeoutSeconds}s timeout")
 
@@ -346,7 +344,7 @@ function Test-PortConnectivity {
             }
         }
     } catch {
-        $logger = Get-Logger
+        $logger = [Logger]::GetInstance()
         $errorKey = "${Server}:${Port}"
         $errorMessage = $_.Exception.Message
         
@@ -412,7 +410,8 @@ function Show-HealthStatus {
         [datetime]$StartTime
     )
     
-    $logger = Get-Logger
+    $logger = [Logger]::GetInstance()
+    $ui = [UserInteraction]::GetInstance()
     $currentTime = Get-Date
     $duration = $currentTime - $StartTime
     $readyCount = 0
@@ -426,16 +425,16 @@ function Show-HealthStatus {
     }
     
     # Display header using standardized ShowScriptTitle
-    [UserInteraction]::ShowScriptTitle("HEALTH MONITOR")
-    [UserInteraction]::WriteBlankLine()
+    $ui.ShowScriptTitle("HEALTH MONITOR")
+    $ui.WriteBlankLine()
     Write-Host "Check #$CheckCount | Duration: $($duration.ToString('hh\:mm\:ss')) | Ready: $readyCount/$totalCount" -ForegroundColor White
     Write-Host "Last Updated: $($currentTime.ToString('HH:mm:ss'))" -ForegroundColor Gray
-    [UserInteraction]::WriteBlankLine()
+    $ui.WriteBlankLine()
     
     # Group services by server and prepare data for table
     $serverGroups = $Services.Values | Group-Object -Property Server | Sort-Object Name
     
-    $logger = Get-Logger
+    $logger = [Logger]::GetInstance()
     $logger.LogInfo("Found $($serverGroups.Count) server groups", "Health Monitor")
     foreach ($group in $serverGroups) {
         $logger.LogInfo("Server group: Name='$($group.Name)', Count=$($group.Count)", "Health Monitor")
@@ -452,7 +451,7 @@ function Show-HealthStatus {
         
         Write-Host "SERVER: $serverName" -ForegroundColor Yellow
         Write-Host "Address: $serverAddress" -ForegroundColor Gray
-        [UserInteraction]::WriteBlankLine()
+        $ui.WriteBlankLine()
         
         # Prepare data for WriteTable function
         $tableData = @()
@@ -487,7 +486,7 @@ function Show-HealthStatus {
                 $logger.LogInfo("Table displayed successfully", "Health Monitor")
             } catch {
                 $logger.LogError("Error displaying table: $($_.Exception.Message)", "Health Monitor")
-                [UserInteraction]::WriteActivity("Error displaying table: $($_.Exception.Message)", 'error')
+                $ui.WriteActivity("Error displaying table: $($_.Exception.Message)", 'error')
                 # Fallback to simple display
                 Write-Host "Port | Description | Status | Last Check" -ForegroundColor Magenta
                 Write-Host "-----|-----------|---------|-----------" -ForegroundColor Magenta
@@ -499,16 +498,16 @@ function Show-HealthStatus {
                 }
             }
         } else {
-            [UserInteraction]::WriteActivity("No services configured for this server", 'warning')
+            $ui.WriteActivity("No services configured for this server", 'warning')
         }
-        [UserInteraction]::WriteBlankLine()
+        $ui.WriteBlankLine()
     }
     
     # Progress bar using reusable UserInteraction method
     Write-InlineProgressBar -Current $readyCount -Total $totalCount -Label "Service Status"
-    [UserInteraction]::WriteBlankLine()
+    $ui.WriteBlankLine()
     
     if ($readyCount -ne $totalCount) {
-        [UserInteraction]::WriteActivity("Waiting for services to become ready...", 'warning')
+        $ui.WriteActivity("Waiting for services to become ready...", 'warning')
     }
 }

@@ -1,10 +1,24 @@
 using module ..\core\Logger.psm1
 
 class UserInteraction {
+    static [UserInteraction]$Instance
+    static [object]$Lock = [object]::new()
+
     UserInteraction() {}
 
+    static [UserInteraction]GetInstance() {
+        if (-not [UserInteraction]::Instance) {
+            [UserInteraction]::Instance = [UserInteraction]::new()
+        }
+        return [UserInteraction]::Instance
+    }
+
+    static [void]Reset() {
+        [UserInteraction]::Instance = $null
+    }
+
     [string] ShowMenu([object]$Config, [string]$Title, [string[]]$Options, [bool]$ShowBanner = $true, [bool]$AllowBack = $false) {
-        $logger = Get-Logger
+        $logger = [Logger]::GetInstance()
         $menuOptions = @($Options)
         $isMainMenu = -not $AllowBack
         while ($true) {
@@ -38,7 +52,7 @@ class UserInteraction {
                 Write-Host ""
             }
             Write-Host ("`n$Title") -ForegroundColor Cyan
-            [UserInteraction]::WriteBlankLine()
+            $this.WriteBlankLine()
             for ($i = 0; $i -lt $menuOptions.Length; $i++) {
                 Write-Host ("    [$($i+1)] $($menuOptions[$i])")
             }
@@ -70,7 +84,7 @@ class UserInteraction {
             }
             if ([string]::IsNullOrWhiteSpace($choice)) {
                 Clear-Host
-                [UserInteraction]::WriteActivity("No option selected. Please enter a valid choice number or special key.", 'warning')
+                $this.WriteActivity("No option selected. Please enter a valid choice number or special key.", 'warning')
                 $logger.LogWarning("User entered empty choice", "Menu Input")
                 Start-Sleep -Seconds 2
                 continue
@@ -84,12 +98,12 @@ class UserInteraction {
                     return $selectedOption
                 } else {
                     Clear-Host
-                    [UserInteraction]::WriteActivity("Selection not confirmed. Please choose again.", 'warning')
+                    $this.WriteActivity("Selection not confirmed. Please choose again.", 'warning')
                     $logger.LogWarning("Menu selection not confirmed by user", "Menu Input")
                 }
             } else {
                 Clear-Host
-                [UserInteraction]::WriteActivity("Invalid choice '$choice'. Please enter a number between 1 and $($menuOptions.Length) or a special key (b/d/x).", 'warning')
+                $this.WriteActivity("Invalid choice '$choice'. Please enter a number between 1 and $($menuOptions.Length) or a special key (b/d/x).", 'warning')
                 $logger.LogWarning("User entered invalid choice: $choice", "Menu Input")
                 Start-Sleep -Seconds 2
                 continue
@@ -98,7 +112,7 @@ class UserInteraction {
         return '' # Default return to satisfy linter
     }
 
-    static [void] ShowScriptTitle([string]$Title) {
+    [void] ShowScriptTitle([string]$Title) {
         if (Get-Module -ListAvailable -Name WriteAscii) {
             try {
                 Import-Module WriteAscii -ErrorAction Stop
@@ -111,8 +125,8 @@ class UserInteraction {
         }
     }
 
-    static [void] WriteActivity([string]$Message, [string]$type = 'info') {
-        $logger = Get-Logger
+    [void] WriteActivity([string]$Message, [string]$type = 'info') {
+        $logger = [Logger]::GetInstance()
         
         if ($type -eq 'info') {
             Write-Host (" ~ $Message") -ForegroundColor Green
@@ -129,8 +143,36 @@ class UserInteraction {
         }
     }
 
+    [void] WriteTable([array]$Data, [string[]]$Columns, [string[]]$Headers) {
+        $this.WriteTable($Data, $Columns, $Headers, @(), @{})
+    }
+    
+    [void] WriteActivity([string]$Message) {
+        $this.WriteActivity($Message, 'info')
+    }
+    
+    [System.Security.SecureString] ReadVerifiedPassword() {
+        return $this.ReadVerifiedPassword("Enter password")
+    }
+    
+    [object] InitializeProgressBar([int]$TotalTasks) {
+        return $this.InitializeProgressBar($TotalTasks, "Processing tasks")
+    }
+    
+    [void] UpdateProgressBar([object]$ProgressBar) {
+        $this.UpdateProgressBar($ProgressBar, 1, "")
+    }
+    
+    [void] UpdateProgressBar([object]$ProgressBar, [int]$CompletedTasks) {
+        $this.UpdateProgressBar($ProgressBar, $CompletedTasks, "")
+    }
+    
+    [void] WriteInlineProgressBar([int]$Current, [int]$Total) {
+        $this.WriteInlineProgressBar($Current, $Total, "Progress", 20)
+    }
+    
     [void] WriteTable([array]$Data, [string[]]$Columns, [string[]]$Headers, [string[]]$Alignments = @(), [hashtable]$ColorMappings = @{}) {
-        $logger = Get-Logger
+        $logger = [Logger]::GetInstance()
         $logger.LogInfo("Displaying table with $($Data.Count) rows and $($Columns.Count) columns", "Table Display")
         if (-not $Headers) { $Headers = $Columns }
         $colWidths = @()
@@ -196,35 +238,27 @@ class UserInteraction {
         }
     }
 
-    static [void] WriteBlankLine() {
+    [void] WriteBlankLine() {
         Write-Host ""
     }
 
-    static [void] WriteTable([array]$Data, [string[]]$Columns, [object]$Headers = $null, [object]$Alignments = $null, [object]$ColorMappings = $null) {
-        if ($null -eq $Headers) { $Headers = $Columns }
-        if ($null -eq $Alignments) { $Alignments = @() }
-        if ($null -eq $ColorMappings) { $ColorMappings = @{} }
-        $ui = [UserInteraction]::new()
-        $ui.WriteTable($Data, $Columns, $Headers, $Alignments, $ColorMappings)
-    }
-
     [System.Security.SecureString] ReadVerifiedPassword([string]$Prompt = "Enter password") {
-        $logger = Get-Logger
+        $logger = [Logger]::GetInstance()
         $logger.LogInfo("Password verification prompt started", "Password Input")
         while ($true) {
-            [UserInteraction]::WriteBlankLine()
+            $this.WriteBlankLine()
             $pw1 = Read-Host "$Prompt" -AsSecureString
             $logger.LogUserInput("[PASSWORD ENTERED]", "First Password Entry")
             $pw2 = Read-Host "Re-enter password to confirm" -AsSecureString
             $logger.LogUserInput("[PASSWORD ENTERED]", "Second Password Entry")
             if (([System.Runtime.InteropServices.Marshal]::PtrToStringBSTR([System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($pw1))) -eq ([System.Runtime.InteropServices.Marshal]::PtrToStringBSTR([System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($pw2)))) {
-                [UserInteraction]::WriteActivity("Password entries match.", 'info')
-                [UserInteraction]::WriteBlankLine()
+                $this.WriteActivity("Password entries match.", 'info')
+                $this.WriteBlankLine()
                 $logger.LogInfo("Password verification successful", "Password Input")
                 return $pw1
             } else {
-                [UserInteraction]::WriteActivity("Passwords do not match. Please try again.", 'error')
-                [UserInteraction]::WriteBlankLine()
+                $this.WriteActivity("Passwords do not match. Please try again.", 'error')
+                $this.WriteBlankLine()
                 $logger.LogWarning("Password verification failed - passwords do not match", "Password Input")
             }
         }
@@ -232,7 +266,7 @@ class UserInteraction {
     }
 
     [object] InitializeProgressBar([int]$TotalTasks, [string]$Description = "Processing tasks") {
-        $logger = Get-Logger
+        $logger = [Logger]::GetInstance()
         $logger.LogInfo("Initializing progress bar for $TotalTasks tasks: $Description", "Progress Bar")
         $progressBar = [PSCustomObject]@{
             TotalTasks = $TotalTasks
@@ -252,13 +286,13 @@ class UserInteraction {
         $status = if ($CurrentTask) { $CurrentTask } else { "$($ProgressBar.CompletedTasks)/$($ProgressBar.TotalTasks)" }
         Write-Progress -Id 1 -Activity $ProgressBar.Description -Status $status -PercentComplete $percent
         if ($percent % 10 -eq 0 -or $ProgressBar.CompletedTasks -eq $ProgressBar.TotalTasks) {
-            $logger = Get-Logger
+            $logger = [Logger]::GetInstance()
             $logger.LogInfo("Progress: $($ProgressBar.CompletedTasks)/$($ProgressBar.TotalTasks) tasks completed ($percent%)", "Progress Bar")
         }
     }
 
     [void] CompleteProgressBar([object]$ProgressBar) {
-        $logger = Get-Logger
+        $logger = [Logger]::GetInstance()
         $duration = (Get-Date) - $ProgressBar.StartTime
         $logger.LogInfo("Progress bar completed. Total time: $($duration.ToString('mm\:ss'))", "Progress Bar")
         Write-Progress -Id 1 -Activity $ProgressBar.Description -Status "Completed" -PercentComplete 100 -Completed
@@ -271,25 +305,8 @@ class UserInteraction {
         return $response
     }
 
-    static [string] PromptWithTimeout([string]$Prompt, [int]$TimeoutSeconds = 3) {
-        for ($elapsed = 0; $elapsed -lt $TimeoutSeconds; $elapsed++) {
-            Write-Host $Prompt -NoNewline
-            $start = Get-Date
-            while (((Get-Date) - $start).TotalSeconds -lt 1) {
-                if ([System.Console]::KeyAvailable) {
-                    $key = [System.Console]::ReadKey($true)
-                    Write-Host ""  # Move to next line after keypress
-                    return $key.KeyChar
-                }
-                Start-Sleep -Milliseconds 100
-            }
-        }
-        Write-Host ""  # Move to next line after timeout
-        return $null
-    }
-
-    static [void] WriteInlineProgressBar([int]$Current, [int]$Total, [string]$Label = "Progress", [int]$BarWidth = 20) {
-        $logger = Get-Logger
+    [void] WriteInlineProgressBar([int]$Current, [int]$Total, [string]$Label = "Progress", [int]$BarWidth = 20) {
+        $logger = [Logger]::GetInstance()
         
         # Calculate percentage
         $percentage = if ($Total -gt 0) { [Math]::Round(($Current / $Total) * 100) } else { 0 }
@@ -307,32 +324,46 @@ class UserInteraction {
         # Log progress for audit trail
         $logger.LogInfo("$Label`: $Current/$Total complete ($percentage%)", "Progress Display")
     }
+
+    # Static utility methods (these remain static as they don't need instance state)
+    static [string] PromptWithTimeout([string]$Prompt, [int]$TimeoutSeconds = 3) {
+        for ($elapsed = 0; $elapsed -lt $TimeoutSeconds; $elapsed++) {
+            Write-Host $Prompt -NoNewline
+            $start = Get-Date
+            while (((Get-Date) - $start).TotalSeconds -lt 1) {
+                if ([System.Console]::KeyAvailable) {
+                    $key = [System.Console]::ReadKey($true)
+                    Write-Host ""  # Move to next line after keypress
+                    return $key.KeyChar
+                }
+                Start-Sleep -Milliseconds 100
+            }
+        }
+        Write-Host ""  # Move to next line after timeout
+        return $null
+    }
 }
 
-# Global UserInteraction instance
-$Global:UserInteraction = $null
-
+# Backward compatibility functions (deprecated - use UserInteraction::GetInstance() instead)
 function Initialize-UserInteraction {
-    $Global:UserInteraction = [UserInteraction]::new()
+    [UserInteraction]::GetInstance() | Out-Null
 }
 
 function Get-UserInteraction {
-    if (-not $Global:UserInteraction) {
-        throw "UserInteraction not initialized. Call Initialize-UserInteraction first."
-    }
-    return $Global:UserInteraction
+    return [UserInteraction]::GetInstance()
 }
 
 # Deprecated function wrappers for backward compatibility
 function Show-Menu {
     param([object]$Config, [string]$Title, [string[]]$Options, [bool]$ShowBanner = $true, [bool]$AllowBack = $false)
-    $ui = Get-UserInteraction
+    $ui = [UserInteraction]::GetInstance()
     return $ui.ShowMenu($Config, $Title, $Options, $ShowBanner, $AllowBack)
 }
 
 function Write-Activity {
     param([string]$Message, [string]$type = 'info')
-    [UserInteraction]::WriteActivity($Message, $type)
+    $ui = [UserInteraction]::GetInstance()
+    $ui.WriteActivity($Message, $type)
 }
 
 function Write-Table {
@@ -343,35 +374,36 @@ function Write-Table {
         [string[]]$Alignments = @(),
         [hashtable]$ColorMappings = @{}
     )
-    $ui = Get-UserInteraction
+    $ui = [UserInteraction]::GetInstance()
     $ui.WriteTable($Data, $Columns, $Headers, $Alignments, $ColorMappings)
 }
 
 function Write-BlankLine {
-    [UserInteraction]::WriteBlankLine()
+    $ui = [UserInteraction]::GetInstance()
+    $ui.WriteBlankLine()
 }
 
 function Read-VerifiedPassword {
     param([string]$Prompt = "Enter password")
-    $ui = Get-UserInteraction
+    $ui = [UserInteraction]::GetInstance()
     return $ui.ReadVerifiedPassword($Prompt)
 }
 
 function Initialize-ProgressBar {
     param([int]$TotalTasks, [string]$Description = "Processing tasks")
-    $ui = Get-UserInteraction
+    $ui = [UserInteraction]::GetInstance()
     return $ui.InitializeProgressBar($TotalTasks, $Description)
 }
 
 function Update-ProgressBar {
     param([object]$ProgressBar, [int]$CompletedTasks = 1, [string]$CurrentTask = "")
-    $ui = Get-UserInteraction
+    $ui = [UserInteraction]::GetInstance()
     $ui.UpdateProgressBar($ProgressBar, $CompletedTasks, $CurrentTask)
 }
 
 function Complete-ProgressBar {
     param([object]$ProgressBar)
-    $ui = Get-UserInteraction
+    $ui = [UserInteraction]::GetInstance()
     $ui.CompleteProgressBar($ProgressBar)
 }
 
@@ -384,7 +416,8 @@ function Write-InlineProgressBar {
         [string]$Label = "Progress",
         [int]$BarWidth = 20
     )
-    [UserInteraction]::WriteInlineProgressBar($Current, $Total, $Label, $BarWidth)
+    $ui = [UserInteraction]::GetInstance()
+    $ui.WriteInlineProgressBar($Current, $Total, $Label, $BarWidth)
 }
 
 function Show-SimpleMenu {

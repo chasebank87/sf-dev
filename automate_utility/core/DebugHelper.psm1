@@ -1,10 +1,31 @@
+using module ..\core\Logger.psm1
+
 class DebugHelper {
     [bool]$IsDebugMode
     [object]$Config
+    static [DebugHelper]$Instance
+    static [object]$Lock = [object]::new()
 
     DebugHelper([object]$config) {
         $this.Config = $config
         $this.IsDebugMode = if ($config.debug) { $config.debug } else { $false }
+    }
+
+    static [DebugHelper]GetInstance() {
+        if (-not [DebugHelper]::Instance) {
+            throw "DebugHelper not initialized. Call Initialize-DebugHelper with configuration first."
+        }
+        return [DebugHelper]::Instance
+    }
+
+    static [DebugHelper]Initialize([object]$Config) {
+        # Always create a new instance to ensure fresh config
+        [DebugHelper]::Instance = [DebugHelper]::new($Config)
+        return [DebugHelper]::Instance
+    }
+
+    static [void]Reset() {
+        [DebugHelper]::Instance = $null
     }
 
     [bool]IsDebug() {
@@ -12,7 +33,7 @@ class DebugHelper {
     }
 
     [void]LogCommand([string]$Command, [string]$Description = "") {
-        $logger = Get-Logger
+        $logger = [Logger]::GetInstance()
         if ($this.IsDebugMode) {
             # Remove password parameters from command for security
             $sanitizedCommand = $this.SanitizeCommand($Command)
@@ -46,7 +67,7 @@ class DebugHelper {
     }
 
     [void]LogFileOperation([string]$Operation, [string]$Source, [string]$Destination = "") {
-        $logger = Get-Logger
+        $logger = [Logger]::GetInstance()
         if ($this.IsDebugMode) {
             $message = "DEBUG FILE OPERATION: $Operation"
             if ($Destination) {
@@ -60,7 +81,7 @@ class DebugHelper {
     }
 
     [void]LogServerOperation([string]$ServerName, [string]$Operation, [string]$Details) {
-        $logger = Get-Logger
+        $logger = [Logger]::GetInstance()
         if ($this.IsDebugMode) {
             $message = "DEBUG SERVER OPERATION: $ServerName - $Operation - $Details"
             Write-Host $message -ForegroundColor Magenta
@@ -69,7 +90,7 @@ class DebugHelper {
     }
 
     [void]LogPasswordOperation([string]$Operation, [string]$Target) {
-        $logger = Get-Logger
+        $logger = [Logger]::GetInstance()
         if ($this.IsDebugMode) {
             $message = "DEBUG PASSWORD OPERATION: $Operation - Target: $Target"
             Write-Host $message -ForegroundColor Red
@@ -86,6 +107,11 @@ class DebugHelper {
         # Special command type that bypasses all restrictions
         if ($CommandType -eq "ExecuteAll") {
             return $true
+        }
+        
+        # Explicitly block unsafe operations
+        if ($CommandType -eq "UnsafeOperation") {
+            return $false
         }
         
         # Commands that are allowed to run in debug mode (retrieval commands)
@@ -118,7 +144,7 @@ class DebugHelper {
     }
 
     [string]AnalyzeScriptBlockForCommandType([scriptblock]$ScriptBlock) {
-        $logger = Get-Logger
+        $logger = [Logger]::GetInstance()
         
         # If debug mode is OFF, don't analyze - just return a safe command type
         if (-not $this.IsDebugMode) {
@@ -248,7 +274,7 @@ class DebugHelper {
     }
 
     [object]InvokeOrDebug([object]$Session, [scriptblock]$ScriptBlock, [string]$Description, [string]$CommandType, [object[]]$ArgumentList = @()) {
-        $logger = Get-Logger
+        $logger = [Logger]::GetInstance()
         if ($this.ShouldExecuteCommand($CommandType)) {
             # Execute the command - always use -ArgumentList to avoid parameter issues
 
@@ -267,7 +293,17 @@ class DebugHelper {
             # Log what would have been executed
             $commandString = $ScriptBlock.ToString()
             if ($ArgumentList.Count -gt 0) {
-                $argString = $ArgumentList -join ', '
+                # Sanitize argument list to hide passwords
+                $sanitizedArgs = @()
+                foreach ($arg in $ArgumentList) {
+                    if ($arg -is [string] -and $arg.Length -gt 8) {
+                        # Assume long strings might be passwords, redact them
+                        $sanitizedArgs += "[REDACTED]"
+                    } else {
+                        $sanitizedArgs += $arg
+                    }
+                }
+                $argString = $sanitizedArgs -join ', '
                 $commandString += " -ArgumentList: $argString"
             }
             $this.LogCommand($commandString, $Description)
@@ -323,7 +359,10 @@ class DebugHelper {
         }
     }
 
+    # Note: Session creation is now handled by SessionHelper::CreatePSSessionWithDebug()
+    # This method is deprecated and will be removed in future versions
     [object]NewPSSessionOrDebug([string]$ComputerName, [string]$Description) {
+        Write-Warning "NewPSSessionOrDebug is deprecated. Use SessionHelper::CreatePSSessionWithDebug instead."
         $command = "New-PSSession -ComputerName '$ComputerName' -EnableNetworkAccess"
         $this.LogCommand($command, $Description)
         
@@ -332,19 +371,14 @@ class DebugHelper {
     }
 }
 
-# Global debug helper instance
-$Global:DebugHelper = $null
-
+# Backward compatibility functions (deprecated - use DebugHelper::GetInstance() instead)
 function Initialize-DebugHelper {
     param([object]$Config)
-    $Global:DebugHelper = [DebugHelper]::new($Config)
+    [DebugHelper]::Initialize($Config) | Out-Null
 }
 
 function Get-DebugHelper {
-    if (-not $Global:DebugHelper) {
-        throw "DebugHelper not initialized. Call Initialize-DebugHelper first."
-    }
-    return $Global:DebugHelper
+    return [DebugHelper]::GetInstance()
 }
 
 Export-ModuleMember -Function Initialize-DebugHelper, Get-DebugHelper 

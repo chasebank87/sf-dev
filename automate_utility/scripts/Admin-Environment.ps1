@@ -9,24 +9,20 @@ function Invoke-AdminEnvironment {
     param(
         [Parameter(Mandatory)]
         [object]$Config,
+        [object]$DebugHelper,
         [Parameter(Mandatory)]
         [ValidateSet('Start','Stop')]
         [string]$Mode
     )
     
     # Function entry logging
-    $logger = Get-Logger
+    $logger = [Logger]::GetInstance()
     $logger.LogInfo("=== ADMIN ENVIRONMENT FUNCTION START ===", "Admin Environment")
     $logger.LogInfo("Mode: $Mode", "Admin Environment")
     $logger.LogInfo("Config loaded: $($Config.servers.Count) servers configured", "Admin Environment")
     
-    # Initialize debug helper if not already initialized
-    if (-not $Global:DebugHelper) {
-        $logger.LogInfo("Initializing DebugHelper", "Admin Environment")
-        Initialize-DebugHelper -Config $Config
-    }
-    $debugHelper = Get-DebugHelper
-    $logger.LogInfo("Debug mode: $($debugHelper.IsDebug())", "Admin Environment")
+    # Use passed debug helper
+    $logger.LogInfo("Debug mode: $($DebugHelper.IsDebug())", "Admin Environment")
     
     # Validate configuration
     $servers = $Config.servers

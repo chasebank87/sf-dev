@@ -4,76 +4,75 @@ using module core/Logger.psm1
 using module core/DebugHelper.psm1
 
 function Invoke-UpdateMxlsPasswords {
-    param([object]$Config)
-    $logger = Get-Logger
-    $debugHelper = Get-DebugHelper
-    $UserInteraction = Get-UserInteraction
+    param([object]$Config, [object]$DebugHelper)
+    $logger = [Logger]::GetInstance()
+    $ui = [UserInteraction]::GetInstance()
     Clear-Host
-    [UserInteraction]::ShowScriptTitle("Update MXLS Passwords")
-    [UserInteraction]::WriteBlankLine()
-    [UserInteraction]::WriteActivity("Starting MXLS Password Encryption process...", 'info')
+    $ui.ShowScriptTitle("Update MXLS Passwords")
+    $ui.WriteBlankLine()
+    $ui.WriteActivity("Starting MXLS Password Encryption process...", 'info')
     $logger.LogInfo("Starting MXLS Password Encryption process", "Automation")
     $templateServers = $Config.mxls_template_servers
     $mxlsConfig = $Config.mxls_automation
     $serviceAccount = $mxlsConfig.service_account
     $logger.LogInfo("Processing $($templateServers.Count) template servers for service account: $serviceAccount", "Automation")
-    $progressBar = $UserInteraction.InitializeProgressBar(10, "MXLS Password Encryption Process")
-    [UserInteraction]::WriteActivity("Step 1: Enter new password for $serviceAccount", 'info')
-    $newPassword = $UserInteraction.ReadVerifiedPassword("Enter the new password for $serviceAccount")
+    $progressBar = $ui.InitializeProgressBar(10, "MXLS Password Encryption Process")
+    $ui.WriteActivity("Step 1: Enter new password for $serviceAccount", 'info')
+    $newPassword = $ui.ReadVerifiedPassword("Enter the new password for $serviceAccount")
     $logger.LogUserInput("[PASSWORD ENTERED]", "New MXLS Password")
-    $UserInteraction.UpdateProgressBar($progressBar, 1, "Step 1: Password Entry")
+    $ui.UpdateProgressBar($progressBar, 1, "Step 1: Password Entry")
     $primaryServer = $templateServers | Where-Object { $_.name -eq 'phx-epmap-wp006' }
     if (-not $primaryServer) {
-        [UserInteraction]::WriteActivity("Primary server phx-epmap-wp006 not found in configuration!", 'error')
+        $ui.WriteActivity("Primary server phx-epmap-wp006 not found in configuration!", 'error')
         $logger.LogError("Primary server phx-epmap-wp006 not found in configuration", "Configuration")
         return
     }
-    [UserInteraction]::WriteActivity("Step 2: Processing primary server $($primaryServer.name)...", 'info')
+    $ui.WriteActivity("Step 2: Processing primary server $($primaryServer.name)...", 'info')
     $logger.LogServerOperation($primaryServer.name, "Primary Processing", "Starting MXLS password update")
     $session = $null
     try {
         $session = $debugHelper.NewPSSessionOrDebug($primaryServer.address, "Creating session to $($primaryServer.name)")
         $logger.LogServerOperation($primaryServer.name, "Session Creation", "SUCCESS")
-        $UserInteraction.UpdateProgressBar($progressBar, 1, "Step 2: Session Creation")
-        [UserInteraction]::WriteActivity("Step 3: Updating Login.mxl with new password...", 'info')
+        $ui.UpdateProgressBar($progressBar, 1, "Step 2: Session Creation")
+        $ui.WriteActivity("Step 3: Updating Login.mxl with new password...", 'info')
         $loginPath = Join-Path $mxlsConfig.templates_path $mxlsConfig.login_file
         UpdateLoginMxl $session $loginPath $newPassword $serviceAccount
-        $UserInteraction.UpdateProgressBar($progressBar, 1, "Step 3: Update Login.mxl")
-        [UserInteraction]::WriteActivity("Step 4: Generating encryption keys...", 'info')
+        $ui.UpdateProgressBar($progressBar, 1, "Step 3: Update Login.mxl")
+        $ui.WriteActivity("Step 4: Generating encryption keys...", 'info')
         $generateKeyPath = Join-Path $mxlsConfig.templates_path $mxlsConfig.generate_key_bat
         GenerateEncryptionKeys $session $generateKeyPath
-        $UserInteraction.UpdateProgressBar($progressBar, 1, "Step 4: Generate Keys")
-        [UserInteraction]::WriteActivity("Step 5: Updating Encrypt Login.bat with public key...", 'info')
+        $ui.UpdateProgressBar($progressBar, 1, "Step 4: Generate Keys")
+        $ui.WriteActivity("Step 5: Updating Encrypt Login.bat with public key...", 'info')
         $encryptLoginPath = Join-Path $mxlsConfig.templates_path $mxlsConfig.encrypt_login_bat
         $encryptionKeyPath = Join-Path $mxlsConfig.templates_path $mxlsConfig.encryption_key_file
         $publicKey = GetPublicKey $session $encryptionKeyPath
         UpdateEncryptLoginBat $session $encryptLoginPath $publicKey
-        $UserInteraction.UpdateProgressBar($progressBar, 1, "Step 5: Update Encrypt Login.bat")
-        [UserInteraction]::WriteActivity("Step 6: Updating Maxl.bat with private key...", 'info')
+        $ui.UpdateProgressBar($progressBar, 1, "Step 5: Update Encrypt Login.bat")
+        $ui.WriteActivity("Step 6: Updating Maxl.bat with private key...", 'info')
         $maxlBatPath = Join-Path $mxlsConfig.scripts_path $mxlsConfig.maxl_bat_file
         $privateKey = GetPrivateKey $session $encryptionKeyPath
         UpdateMaxlBat $session $maxlBatPath $privateKey
-        $UserInteraction.UpdateProgressBar($progressBar, 1, "Step 6: Update Maxl.bat")
-        [UserInteraction]::WriteActivity("Step 7: Generating encrypted Login.mxls...", 'info')
+        $ui.UpdateProgressBar($progressBar, 1, "Step 6: Update Maxl.bat")
+        $ui.WriteActivity("Step 7: Generating encrypted Login.mxls...", 'info')
         RunEncryptLoginBat $session $encryptLoginPath
-        $UserInteraction.UpdateProgressBar($progressBar, 1, "Step 7: Generate Login.mxls")
-        [UserInteraction]::WriteActivity("Step 8: Updating scripts Login.mxls with encryption keys...", 'info')
+        $ui.UpdateProgressBar($progressBar, 1, "Step 7: Generate Login.mxls")
+        $ui.WriteActivity("Step 8: Updating scripts Login.mxls with encryption keys...", 'info')
         $encryptedLoginPath = Join-Path $mxlsConfig.templates_path $mxlsConfig.encrypted_login_file
         $scriptsLoginMxlsPath = Join-Path $mxlsConfig.scripts_path $mxlsConfig.encrypted_login_file
         UpdateScriptsLoginMxls $session $encryptedLoginPath $scriptsLoginMxlsPath
-        $UserInteraction.UpdateProgressBar($progressBar, 1, "Step 8: Update Scripts Login.mxls")
-        [UserInteraction]::WriteActivity("Step 9: Hiding password in Login.mxl...", 'info')
+        $ui.UpdateProgressBar($progressBar, 1, "Step 8: Update Scripts Login.mxls")
+        $ui.WriteActivity("Step 9: Hiding password in Login.mxl...", 'info')
         HidePasswordInLoginMxl $session $loginPath $serviceAccount
-        $UserInteraction.UpdateProgressBar($progressBar, 1, "Step 9: Hide Password")
-        [UserInteraction]::WriteActivity("Step 10: Copying files to other template servers...", 'info')
+        $ui.UpdateProgressBar($progressBar, 1, "Step 9: Hide Password")
+        $ui.WriteActivity("Step 10: Copying files to other template servers...", 'info')
         $otherServers = $templateServers | Where-Object { $_.name -ne 'phx-epmap-wp006' }
         CopyFilesToOtherServers $session $otherServers $mxlsConfig
-        $UserInteraction.UpdateProgressBar($progressBar, 1, "Step 10: Copy Files")
-        $UserInteraction.CompleteProgressBar($progressBar)
-        [UserInteraction]::WriteActivity("MXLS Password Encryption completed successfully!", 'info')
+        $ui.UpdateProgressBar($progressBar, 1, "Step 10: Copy Files")
+        $ui.CompleteProgressBar($progressBar)
+        $ui.WriteActivity("MXLS Password Encryption completed successfully!", 'info')
         $logger.LogAutomationEnd("Update MXLS Passwords", $true)
     } catch {
-        [UserInteraction]::WriteActivity("Error during MXLS password encryption: $($_.Exception.Message)", 'error')
+        $ui.WriteActivity("Error during MXLS password encryption: $($_.Exception.Message)", 'error')
         $logger.LogError("Error during MXLS password encryption: $($_.Exception.Message)", "Automation")
         $logger.LogAutomationEnd("Update MXLS Passwords", $false)
     } finally {
@@ -86,8 +85,8 @@ function Invoke-UpdateMxlsPasswords {
 
 function UpdateLoginMxl {
     param([object]$Session, [string]$LoginPath, [System.Security.SecureString]$NewPassword, [string]$ServiceAccount)
-    $logger = Get-Logger
-    $debugHelper = Get-DebugHelper
+    $logger = [Logger]::GetInstance()
+    $debugHelper = [DebugHelper]::GetInstance()
     $logger.LogInfo("Updating Login.mxl with new password", "File Operation")
     
     $plainPassword = [Runtime.InteropServices.Marshal]::PtrToStringBSTR(
@@ -259,8 +258,8 @@ function UpdateScriptsLoginMxls {
 
 function HidePasswordInLoginMxl {
     param([object]$Session, [string]$LoginPath, [string]$ServiceAccount)
-    $logger = Get-Logger
-    $debugHelper = Get-DebugHelper
+    $logger = [Logger]::GetInstance()
+    $debugHelper = [DebugHelper]::GetInstance()
     $logger.LogInfo("Hiding password in Login.mxl", "File Operation")
     
     $debugHelper.InvokeOrDebug($Session, {
@@ -282,12 +281,12 @@ function HidePasswordInLoginMxl {
 
 function CopyFilesToOtherServers {
     param([object]$PrimarySession, [array]$OtherServers, [object]$MxlsConfig)
-    $logger = Get-Logger
-    $debugHelper = Get-DebugHelper
+    $logger = [Logger]::GetInstance()
+    $debugHelper = [DebugHelper]::GetInstance()
     $logger.LogInfo("Copying files to other template servers", "File Distribution")
-    $UserInteraction = Get-UserInteraction
+    $ui = [UserInteraction]::GetInstance()
     foreach ($server in $OtherServers) {
-        [UserInteraction]::WriteActivity("Copying files to $($server.name)...", 'info')
+        $ui.WriteActivity("Copying files to $($server.name)...", 'info')
         $logger.LogServerOperation($server.name, "File Copy", "Starting file distribution")
         
         $serverSession = $null
@@ -344,10 +343,10 @@ function CopyFilesToOtherServers {
             }, "Copying template files from primary server to $($server.name)", "Copy-Item", @((Join-Path $MxlsConfig.templates_path "*"), $MxlsConfig.templates_path, $serverSession))
             
             $logger.LogServerOperation($server.name, "File Copy", "SUCCESS")
-            [UserInteraction]::WriteActivity("Successfully copied files to $($server.name)", 'info')
+            $ui.WriteActivity("Successfully copied files to $($server.name)", 'info')
             
         } catch {
-            [UserInteraction]::WriteActivity("Error copying files to $($server.name): $($_.Exception.Message)", 'error')
+            $ui.WriteActivity("Error copying files to $($server.name): $($_.Exception.Message)", 'error')
             $logger.LogError("Error copying files to $($server.name): $($_.Exception.Message)", "File Distribution")
         } finally {
             if ($serverSession) {

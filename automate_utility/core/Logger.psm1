@@ -4,6 +4,8 @@ class Logger {
     [datetime]$SessionStart
     [bool]$IsActive
     [object]$Config
+    static [Logger]$Instance
+    static [object]$Lock = [object]::new()
 
     Logger([object]$config) {
         $this.Config = $config
@@ -33,6 +35,27 @@ class Logger {
         $this.WriteLog("Session Start: $($this.SessionStart)", "INFO")
         $this.WriteLog("Log File: $($this.LogFilePath)", "INFO")
         $this.WriteLog("", "INFO")
+    }
+
+    static [Logger]GetInstance() {
+        if (-not [Logger]::Instance) {
+            throw "Logger not initialized. Call Initialize-Logger with configuration first."
+        }
+        return [Logger]::Instance
+    }
+
+    static [Logger]Initialize([object]$Config) {
+        if (-not [Logger]::Instance) {
+            [Logger]::Instance = [Logger]::new($Config)
+        }
+        return [Logger]::Instance
+    }
+
+    static [void]Reset() {
+        if ([Logger]::Instance) {
+            [Logger]::Instance.CloseSession()
+            [Logger]::Instance = $null
+        }
     }
 
     [void]WriteLog([string]$Message, [string]$Level = "INFO") {
@@ -105,19 +128,14 @@ class Logger {
     }
 }
 
-# Global logger instance
-$Global:Logger = $null
-
+# Backward compatibility functions (deprecated - use Logger::GetInstance() instead)
 function Initialize-Logger {
     param([object]$Config)
-    $Global:Logger = [Logger]::new($Config)
+    [Logger]::Initialize($Config) | Out-Null
 }
 
 function Get-Logger {
-    if (-not $Global:Logger) {
-        throw "Logger not initialized. Call Initialize-Logger first."
-    }
-    return $Global:Logger
+    return [Logger]::GetInstance()
 }
 
 Export-ModuleMember -Function Initialize-Logger, Get-Logger 
