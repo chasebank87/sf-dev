@@ -51,6 +51,7 @@ $ModuleInstaller.InstallRequiredModules(@('psAsciiArt', 'powershell-yaml', 'Writ
 . $PSScriptRoot/scripts/Admin-Environment.ps1
 . $PSScriptRoot/scripts/Health-Monitor.ps1
 . $PSScriptRoot/scripts/Update-ServiceAccountServices.ps1
+. $PSScriptRoot/scripts/Enable-DisableTaskSchedulerJobs.ps1
 
 # Initialize core components using singleton pattern
 Initialize-ConfigLoader
@@ -405,7 +406,7 @@ function Show-AdminMenu {
         Clear-Host
         $ui = [UserInteraction]::GetInstance()
         $logger = [Logger]::GetInstance()
-        $adminOption = $ui.ShowMenu($yamlConfig, 'Administration', @('Start Environment', 'Stop Environment', 'Health Monitor'), $true, $true)
+        $adminOption = $ui.ShowMenu($yamlConfig, 'Administration', @('Start Environment', 'Stop Environment', 'Health Monitor', 'Enable and Disable Task Scheduler Jobs'), $true, $true)
         if ($adminOption -eq '__BACK__') {
             $logger.LogMenuSelection("Go Back", "Admin Menu")
             return
@@ -498,6 +499,36 @@ function Show-AdminMenu {
                     # For any other result, log completion and continue to menu
                     $Logger.LogAutomationEnd("Health Monitor", $result)
                     continue
+                }
+            }
+            'Enable and Disable Task Scheduler Jobs' {
+                $Logger.LogAutomationStart("Enable and Disable Task Scheduler Jobs")
+                Invoke-EnableDisableTaskSchedulerJobs -Config $yamlConfig -DebugHelper $DebugHelper
+                $Logger.LogAutomationEnd("Enable and Disable Task Scheduler Jobs", $true)
+                $UserInteraction.WriteBlankLine()
+                $UserInteraction.WriteActivity("Automation completed. What would you like to do?", 'info')
+                $choice = Read-Host "Enter '1' to return to administration menu or 'q' to quit"
+                $Logger.LogUserInput($choice, "Post-Automation Choice")
+                switch ($choice) {
+                    '1' {
+                        $Logger.LogInfo("User chose to return to administration menu", "User Action")
+                        $UserInteraction.WriteActivity("Returning to administration menu...", 'info')
+                        Start-Sleep -Seconds 1
+                        continue
+                    }
+                    'q' {
+                        $Logger.LogInfo("User chose to quit application", "User Action")
+                        $UserInteraction.WriteActivity("Exiting application...", 'info')
+                        Start-Sleep -Seconds 1
+                        $Logger.CloseSession()
+                        exit
+                    }
+                    default {
+                        $Logger.LogWarning("Invalid choice entered: $choice", "User Input")
+                        $UserInteraction.WriteActivity("Invalid choice. Returning to administration menu...", 'warning')
+                        Start-Sleep -Seconds 2
+                        continue
+                    }
                 }
             }
         }
